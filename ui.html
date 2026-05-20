@@ -1,0 +1,2420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>dispatch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --sidebar-w: 280px;
+}
+
+body {
+  --bg:        oklch(0.16 0.005 260);
+  --bg-2:      oklch(0.19 0.006 260);
+  --bg-3:      oklch(0.22 0.007 260);
+  --panel:     oklch(0.205 0.006 260);
+  --panel-2:   oklch(0.235 0.008 260);
+  --line:      oklch(0.30 0.008 260);
+  --line-2:    oklch(0.36 0.010 260);
+  --fg:        oklch(0.96 0.005 260);
+  --fg-2:      oklch(0.78 0.008 260);
+  --fg-3:      oklch(0.58 0.010 260);
+  --fg-4:      oklch(0.42 0.010 260);
+  --accent:    oklch(0.78 0.16 150);
+  --accent-bg: oklch(0.30 0.10 150);
+  --accent-fg: oklch(0.94 0.06 150);
+  --link:      oklch(0.74 0.14 230);
+  --danger:    oklch(0.70 0.18 25);
+  --warn:      oklch(0.78 0.15 75);
+  --shadow:    0 8px 24px -8px oklch(0 0 0 / 0.6);
+  --shadow-lg: 0 24px 60px -16px oklch(0 0 0 / 0.7);
+  color-scheme: dark;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+body.theme-light {
+  --bg:        oklch(0.985 0.003 100);
+  --bg-2:      oklch(0.965 0.004 100);
+  --bg-3:      oklch(0.945 0.005 100);
+  --panel:     oklch(1 0 0);
+  --panel-2:   oklch(0.975 0.003 100);
+  --line:      oklch(0.90 0.005 100);
+  --line-2:    oklch(0.82 0.008 100);
+  --fg:        oklch(0.20 0.010 260);
+  --fg-2:      oklch(0.36 0.010 260);
+  --fg-3:      oklch(0.50 0.010 260);
+  --fg-4:      oklch(0.65 0.010 260);
+  --accent:    oklch(0.50 0.15 150);
+  --accent-bg: oklch(0.92 0.06 150);
+  --accent-fg: oklch(0.30 0.12 150);
+  --link:      oklch(0.50 0.15 230);
+  --danger:    oklch(0.55 0.18 25);
+  --warn:      oklch(0.60 0.15 75);
+  --shadow:    0 4px 14px -4px oklch(0 0 0 / 0.10);
+  --shadow-lg: 0 16px 40px -12px oklch(0 0 0 / 0.18);
+  color-scheme: light;
+}
+
+/* ── Layout ── */
+#app {
+  display: flex;
+  height: 100dvh;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Sidebar ── */
+#sidebar {
+  width: var(--sidebar-w);
+  flex: 0 0 var(--sidebar-w);
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sb-brand {
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.sb-brand-name {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.sb-brand-name .accent { color: var(--accent); }
+
+.mode-toggle {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.mode-toggle-inner {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 3px;
+  gap: 2px;
+}
+.mode-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--fg-3);
+  font-size: 12.5px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.mode-btn.active { background: var(--panel-2); color: var(--fg); }
+body.theme-light .mode-btn.active { background: white; box-shadow: 0 1px 3px oklch(0 0 0 / 0.12); }
+.seg-btn { padding: 7px 10px; border-radius: 5px; border: none; background: transparent; color: var(--fg-3); font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; cursor: pointer; transition: background 0.12s, color 0.12s; }
+.seg-btn.active { background: var(--panel-2); color: var(--fg); }
+body.theme-light .seg-btn.active { background: white; box-shadow: 0 1px 3px oklch(0 0 0 / 0.12); }
+.mode-btn .cnt { font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-4); }
+.mode-btn.active .cnt { color: var(--fg-3); }
+
+.filter-strip {
+  padding: 8px 14px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.chip {
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg-3);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.chip:hover { color: var(--fg); border-color: var(--line-2); }
+.chip.active { background: var(--fg); border-color: var(--fg); color: var(--bg); }
+
+#sb-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 10px 14px;
+}
+
+.sb-item {
+  display: block;
+  width: 100%;
+  padding: 10px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  border-bottom: 1px solid var(--line);
+  color: var(--fg);
+  transition: background 0.1s;
+}
+.sb-item:hover { background: var(--panel-2); }
+.sb-item.active { background: var(--panel-2); }
+.sb-item:last-child { border-bottom: none; }
+.sb-item-row { display: flex; align-items: center; gap: 6px; }
+.sb-item-title { margin-top: 5px; font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-item-sub { font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-item-prompt { margin-top: 5px; font-size: 12.5px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-item.unread .sb-item-prompt { color: var(--fg); }
+.sb-footer {
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+/* ── Main ── */
+#main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  background: var(--bg);
+}
+
+/* ── Topbar ── */
+#topbar {
+  padding: 14px 24px 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.topbar-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.topbar-title { font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
+.topbar-meta { color: var(--fg-3); font-size: 12px; margin-top: 2px; }
+.topbar-actions { display: flex; gap: 6px; align-items: center; margin-top: 2px; }
+
+.tabs { display: flex; gap: 2px; align-items: stretch; }
+.tab {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg-3);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: color 0.12s;
+}
+.tab:hover { color: var(--fg); }
+.tab.active { color: var(--fg); border-bottom-color: var(--accent); }
+.tab .tc { margin-left: 6px; font-family: var(--font-mono); font-size: 11px; color: var(--fg-4); }
+
+/* ── Content ── */
+#content { flex: 1; overflow-y: auto; min-height: 0; }
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 11px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--fg);
+  font-size: 12.5px; font-weight: 500; font-family: var(--font-sans);
+  cursor: pointer; transition: background 0.12s, border-color 0.12s; white-space: nowrap;
+}
+.btn:hover { background: var(--panel-2); border-color: var(--line-2); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--fg-2); }
+.btn-ghost:hover { background: var(--bg-3) !important; color: var(--fg) !important; border-color: transparent !important; }
+.btn-primary { background: var(--accent) !important; border-color: var(--accent) !important; color: oklch(0.18 0.05 150) !important; }
+body.theme-light .btn-primary { color: white !important; }
+.btn-primary:hover { filter: brightness(1.06); }
+.btn-sm { padding: 3px 8px !important; font-size: 11.5px !important; }
+.btn-mono { font-family: var(--font-mono) !important; }
+.btn-danger { color: var(--danger) !important; }
+
+/* ── Pill ── */
+.pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 7px; border-radius: 4px;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  border: 1px solid transparent; white-space: nowrap; line-height: 1.4;
+}
+
+/* ── Status badge ── */
+.status-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 7px; border-radius: 4px;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.status-badge.s-active { background: var(--accent-bg); color: var(--accent-fg); }
+.status-badge.s-archived { background: var(--bg-3); color: var(--fg-3); }
+.status-badge::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.status-badge.s-active::before { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+
+/* ── Inputs ── */
+.input, .select, .textarea {
+  background: var(--bg); border: 1px solid var(--line); color: var(--fg);
+  border-radius: 6px; padding: 7px 10px; font-size: 13px;
+  font-family: var(--font-sans); width: 100%; outline: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.input:focus, .select:focus, .textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent);
+}
+.mono-input { font-family: var(--font-mono) !important; }
+
+/* ── Meta ── */
+.meta { color: var(--fg-3); font-size: 12px; }
+.meta-mono { color: var(--fg-3); font-family: var(--font-mono); font-size: 11.5px; }
+.mono { font-family: var(--font-mono); }
+
+/* ── Agents table ── */
+.agents-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.agents-table th {
+  text-align: left; padding: 9px 14px;
+  font-size: 10.5px; font-family: var(--font-mono); font-weight: 600;
+  color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+.agents-table th.r { text-align: right; }
+.agents-table td { padding: 11px 14px; vertical-align: middle; border-top: 1px solid var(--line); }
+.agents-table td.r { text-align: right; }
+.agents-table tbody tr { cursor: pointer; transition: background 0.1s; }
+.agents-table tbody tr:hover td { background: var(--panel-2); }
+
+/* ── Digest ── */
+.digest-list { padding: 20px 24px 80px; max-width: 880px; margin: 0 auto; }
+.digest-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 14px; }
+.digest-card-hdr {
+  padding: 14px 18px; display: flex; align-items: center; gap: 10px;
+  cursor: pointer; user-select: none;
+}
+.digest-card-hdr.open { border-bottom: 1px solid var(--line); }
+.digest-card-title {
+  margin: 0; font-size: 14.5px; font-weight: 600; letter-spacing: -0.005em;
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.digest-card-body { padding: 16px 22px 22px; }
+.digest-intro { margin: 0 0 12px; font-size: 14px; color: var(--fg-2); line-height: 1.5; }
+.digest-section {
+  margin: 16px 0 8px; font-size: 11px; font-family: var(--font-mono);
+  font-weight: 600; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.08em;
+}
+.digest-bullets { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; }
+.digest-bullet { padding-left: 16px; position: relative; font-size: 14px; line-height: 1.55; color: var(--fg-2); }
+.digest-bullet::before {
+  content: ""; position: absolute; left: 0; top: 9px;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+}
+.digest-bullet-head { color: var(--fg); font-weight: 500; }
+.digest-bullet-source { margin-top: 4px; display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.link-mono { color: var(--link); font-family: var(--font-mono); font-size: 11px; word-break: break-all; text-decoration: none; }
+.link-mono:hover { text-decoration: underline; }
+
+/* ── Run drawer ── */
+#run-drawer {
+  display: none; position: absolute; inset: 0; z-index: 40;
+}
+#run-drawer.open { display: block; }
+.drawer-bd { position: absolute; inset: 0; background: oklch(0 0 0 / 0.4); }
+.run-drawer-panel {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 480px;
+  background: var(--panel); border-left: 1px solid var(--line);
+  display: flex; flex-direction: column; box-shadow: var(--shadow-lg); z-index: 1;
+}
+.drawer-hdr { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.drawer-body { flex: 1; overflow-y: auto; padding: 18px 22px; }
+.drawer-section-label {
+  font-size: 10.5px; color: var(--fg-3); margin-bottom: 6px;
+  text-transform: uppercase; letter-spacing: 0.08em; font-family: var(--font-mono); font-weight: 600;
+}
+.drawer-section-label + .drawer-section-label,
+.drawer-section-label.mt { margin-top: 20px; }
+.drawer-footer { padding: 12px 18px; border-top: 1px solid var(--line); display: flex; gap: 8px; flex-shrink: 0; }
+
+/* ── Agent sheet ── */
+#agent-sheet, #agent-config-sheet, #settings-sheet {
+  display: none; position: absolute; inset: 0; z-index: 50;
+}
+#agent-sheet.open, #agent-config-sheet.open, #settings-sheet.open { display: block; }
+.sheet-bd { position: absolute; inset: 0; background: oklch(0 0 0 / 0.5); }
+.agent-sheet-panel {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 520px;
+  background: var(--panel); border-left: 1px solid var(--line);
+  display: flex; flex-direction: column; box-shadow: var(--shadow-lg); z-index: 1;
+}
+.sheet-hdr { padding: 16px 22px; border-bottom: 1px solid var(--line); display: flex; align-items: center; flex-shrink: 0; }
+.sheet-body { flex: 1; overflow-y: auto; padding: 20px 22px; display: flex; flex-direction: column; gap: 18px; }
+.sheet-ftr { padding: 14px 22px; border-top: 1px solid var(--line); display: flex; gap: 8px; flex-shrink: 0; }
+details[open] .adv-chevron { transform: rotate(0deg); }
+.adv-chevron { transform: rotate(-90deg); }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field-lbl { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.08em; }
+.field-hint { font-size: 11.5px; color: var(--fg-3); }
+.sched-mode { display: flex; gap: 4px; margin-bottom: 10px; }
+.sched-mode-btn {
+  padding: 5px 12px; border-radius: 5px; border: 1px solid var(--line);
+  background: transparent; color: var(--fg-3);
+  font-family: var(--font-mono); font-size: 11px; cursor: pointer; transition: all 0.12s;
+}
+.sched-mode-btn.active { background: var(--bg-3); color: var(--fg); border-color: var(--line-2); }
+.day-picker { display: flex; gap: 4px; flex-wrap: wrap; }
+.day-btn {
+  width: 36px; height: 32px; border-radius: 5px;
+  border: 1px solid var(--line); background: transparent;
+  color: var(--fg-3); font-family: var(--font-mono);
+  font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.12s;
+}
+.day-btn.active { background: var(--accent-bg); color: var(--accent-fg); border-color: transparent; }
+.cat-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.cat-pick-btn {
+  padding: 0; border: none; background: transparent; cursor: pointer;
+  border-radius: 4px; outline: none; transition: outline 0.1s;
+}
+.cat-pick-btn.active { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── Sparkline ── */
+.spark { display: inline-flex; gap: 2px; align-items: flex-end; height: 18px; }
+.spark-bar { width: 3px; border-radius: 1px; }
+
+/* ── Status toast ── */
+#toast {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 16px; font-size: 12px; color: var(--fg); box-shadow: var(--shadow);
+  z-index: 200; opacity: 0; transition: opacity 0.2s; pointer-events: none; white-space: nowrap;
+}
+#toast.show { opacity: 1; }
+
+/* ── Running/queued badge ── */
+.qbadge {
+  font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 3px;
+  background: var(--bg-3); color: var(--fg-3);
+  font-family: var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase;
+}
+.qbadge.running { background: var(--warn); color: oklch(0.18 0.05 75); }
+
+/* ── Markdown ── */
+.md h1,.md h2,.md h3,.md h4 { color: var(--fg); font-weight: 700; margin: 1em 0 0.4em; line-height: 1.3; }
+.md h1 { font-size: 17px; } .md h2 { font-size: 15px; } .md h3 { font-size: 13px; } .md h4 { font-size: 12px; color: var(--fg-2); }
+.md p { margin: 0.6em 0; } .md p:first-child { margin-top: 0; } .md p:last-child { margin-bottom: 0; }
+.md ul,.md ol { padding-left: 1.4em; margin: 0.5em 0; } .md li { margin: 0.25em 0; }
+.md a { color: var(--link); text-decoration: none; } .md a:hover { text-decoration: underline; }
+.md code { background: var(--bg-3); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; font-size: 12px; font-family: var(--font-mono); }
+.md pre { background: var(--bg-3); border: 1px solid var(--line); border-radius: 4px; padding: 12px 14px; overflow-x: auto; margin: 0.7em 0; }
+.md pre code { background: none; border: none; padding: 0; }
+.md blockquote { border-left: 3px solid var(--line); padding-left: 12px; color: var(--fg-3); margin: 0.6em 0; }
+.md hr { border: none; border-top: 1px solid var(--line); margin: 1em 0; }
+.md table { border-collapse: collapse; width: 100%; margin: 0.7em 0; font-size: 12px; }
+.md th,.md td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+.md th { background: var(--panel); font-weight: 700; }
+.md strong { color: var(--fg); font-weight: 700; } .md em { color: var(--fg-2); }
+
+/* ── Tool calls ── */
+details.tool-call { border: 1px solid var(--line); border-radius: 4px; margin-bottom: 6px; overflow: hidden; }
+details.tool-call summary { padding: 8px 12px; cursor: pointer; display: flex; align-items: center; gap: 8px; background: var(--panel); list-style: none; font-size: 11px; }
+details.tool-call summary::-webkit-details-marker { display: none; }
+details.tool-call summary::before { content: '▶'; font-size: 8px; color: var(--fg-3); transition: transform 0.15s; }
+details[open].tool-call summary::before { transform: rotate(90deg); }
+.tool-name { font-weight: 700; color: var(--accent); font-family: var(--font-mono); }
+.tool-dur { color: var(--fg-3); margin-left: auto; font-size: 10px; font-family: var(--font-mono); }
+.tool-body { padding: 10px 12px; background: var(--bg-3); border-top: 1px solid var(--line); font-size: 11px; overflow-x: auto; font-family: var(--font-mono); }
+.tool-body pre { white-space: pre-wrap; word-break: break-word; color: var(--fg-3); }
+details.log-section summary { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg-3); cursor: pointer; list-style: none; padding: 4px 0; user-select: none; font-family: var(--font-mono); }
+details.log-section summary::-webkit-details-marker { display: none; }
+.log-body { background: var(--bg-3); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; margin-top: 6px; font-size: 11px; color: var(--fg-3); white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto; font-family: var(--font-mono); }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--line-2); }
+
+/* ── Mobile header ── */
+#mobile-header {
+  display: none;
+  padding: 14px 18px 10px;
+  padding-top: calc(14px + env(safe-area-inset-top, 0px));
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.mob-brand { font-family: var(--font-mono); font-size: 11px; color: var(--fg-3); letter-spacing: 0.06em; text-transform: uppercase; }
+.mob-brand .accent { color: var(--accent); }
+.mob-title { margin: 2px 0 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+.mob-title .cnt { margin-left: 8px; font-family: var(--font-mono); font-size: 13px; color: var(--fg-3); font-weight: 500; }
+
+/* ── Mobile tab bar ── */
+#mobile-tabbar {
+  display: none;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  padding: 8px 10px;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  flex-shrink: 0;
+}
+.mob-tab-btn {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 6px 0; border: none; background: transparent; color: var(--fg-3); cursor: pointer; transition: color 0.12s;
+}
+.mob-tab-btn.active { color: var(--fg); }
+.mob-tab-btn span { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.04em; }
+
+/* ── Mobile bottom sheets ── */
+.mob-sheet-overlay { display: none; position: absolute; inset: 0; z-index: 50; }
+.mob-sheet-overlay.open { display: block; }
+.mob-sheet-bd { position: absolute; inset: 0; background: oklch(0 0 0 / 0.5); }
+.mob-sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; top: 24px;
+  background: var(--panel); border-top: 1px solid var(--line);
+  border-top-left-radius: 16px; border-top-right-radius: 16px;
+  box-shadow: var(--shadow-lg); display: flex; flex-direction: column; z-index: 1; overflow: hidden;
+}
+.mob-run-sheet {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: var(--panel); border-top: 1px solid var(--line);
+  border-top-left-radius: 16px; border-top-right-radius: 16px;
+  box-shadow: var(--shadow-lg); display: flex; flex-direction: column; z-index: 1;
+  max-height: 88%; overflow: hidden;
+}
+.handle-wrap { padding: 8px 0 4px; display: flex; justify-content: center; flex-shrink: 0; }
+.handle-bar { width: 36px; height: 4px; background: var(--line-2); border-radius: 2px; }
+
+/* ── Empty states ── */
+.empty-state { text-align: center; padding: 60px 24px; color: var(--fg-3); font-size: 13px; }
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  #app { position: fixed; inset: 0; flex-direction: column; }
+  #sidebar { display: none; }
+  #topbar { display: none; }
+  #mobile-header { display: flex; }
+  #mobile-tabbar { display: flex; }
+  #main { position: relative; }
+
+  .run-drawer-panel {
+    position: absolute; top: 24px; right: 0; bottom: 0; left: 0;
+    width: auto; border-left: none;
+    border-top: 1px solid var(--line);
+    border-radius: 16px 16px 0 0;
+  }
+  .agent-sheet-panel {
+    position: absolute; top: 24px; right: 0; bottom: 0; left: 0;
+    width: auto; border-left: none;
+    border-top: 1px solid var(--line);
+    border-radius: 16px 16px 0 0;
+  }
+  .digest-list { padding: 10px 14px 24px; }
+  .digest-card-body { padding: 12px 16px 14px; }
+  .digest-bullet { font-size: 13.5px; }
+  .digest-card-hdr { flex-wrap: wrap; }
+  .digest-card-title { white-space: normal; flex-basis: 0; flex-grow: 1; min-width: 120px; }
+}
+.new-dropdown { position: relative; display: inline-flex; }
+.new-dropdown-menu {
+  display: none; position: absolute; top: calc(100% + 6px); right: 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 4px 16px oklch(0 0 0 / .15); z-index: 200; min-width: 150px; overflow: hidden;
+}
+.new-dropdown.open .new-dropdown-menu { display: block; }
+.new-dropdown-item {
+  display: flex; align-items: center; gap: 8px; padding: 10px 14px; font-size: 13px;
+  color: var(--fg); cursor: pointer; border: none; background: none; width: 100%; text-align: left;
+}
+.new-dropdown-item:hover { background: var(--hover); }
+.new-dropdown-item + .new-dropdown-item { border-top: 1px solid var(--line); }
+.sheet-subtitle { margin: 3px 0 0; font-size: 12px; color: var(--fg-3); }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- ── Sidebar ── -->
+  <aside id="sidebar">
+    <div class="sb-brand">
+      <div class="sb-brand-name">dispatch</div>
+    </div>
+    <div class="mode-toggle">
+      <div class="mode-toggle-inner">
+        <button class="mode-btn active" id="mode-agents" onclick="setSidebarMode('agents')"></button>
+        <button class="mode-btn" id="mode-runs" onclick="setSidebarMode('runs')"></button>
+      </div>
+    </div>
+    <div class="filter-strip" id="filter-strip"></div>
+    <div id="sb-list"></div>
+    <div class="sb-footer">
+      <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="openAgentSheet(null)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New dispatch
+      </button>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <main id="main">
+    <!-- Mobile header -->
+    <div id="mobile-header">
+      <div>
+        <div class="mob-brand">dispatch</div>
+        <h1 class="mob-title" id="mob-title">Digest<span class="cnt" id="mob-count"></span></h1>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="openSettingsSheet()" title="Settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleTheme()" id="theme-btn-mobile" title="Toggle theme"></button>
+        <div class="new-dropdown" id="new-dd-mobile">
+          <button class="btn btn-sm" onclick="toggleNewMenu('new-dd-mobile',event)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:2px"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="new-dropdown-menu">
+            <button class="new-dropdown-item" onclick="openAgentSheet(null);closeNewMenus()">New dispatch</button>
+            <button class="new-dropdown-item" onclick="openAgentConfigSheet(null);closeNewMenus()">New agent</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Topbar -->
+    <div id="topbar">
+      <div class="topbar-top">
+        <div>
+          <h1 class="topbar-title">Agents</h1>
+          <div class="topbar-meta" id="topbar-meta"></div>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-ghost btn-sm" onclick="refreshAll()" title="Refresh">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 20 11 15 11"/><path d="M20 11A8 8 0 1 0 18 16.5"/></svg>
+          </button>
+          <div class="new-dropdown" id="new-dd-desktop">
+            <button class="btn btn-sm" onclick="toggleNewMenu('new-dd-desktop',event)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              New
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:2px"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div class="new-dropdown-menu">
+              <button class="new-dropdown-item" onclick="openAgentSheet(null);closeNewMenus()">New dispatch</button>
+              <button class="new-dropdown-item" onclick="openAgentConfigSheet(null);closeNewMenus()">New agent</button>
+            </div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="openSettingsSheet()" title="Settings">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+          <button class="btn btn-ghost btn-sm" onclick="toggleTheme()" id="theme-btn-top" title="Toggle theme"></button>
+        </div>
+      </div>
+      <div class="tabs">
+        <button class="tab active" id="tab-digest" onclick="setTab('digest')">Digest<span class="tc" id="tc-digest"></span></button>
+        <button class="tab" id="tab-active" onclick="setTab('active')">Active<span class="tc" id="tc-active"></span></button>
+        <button class="tab" id="tab-archived" onclick="setTab('archived')">Archived<span class="tc" id="tc-archived"></span></button>
+        <button class="tab" id="tab-library" onclick="setTab('library')">Library<span class="tc" id="tc-library"></span></button>
+      </div>
+    </div>
+
+    <!-- Content area -->
+    <div id="content"></div>
+
+    <!-- Mobile tab bar -->
+    <nav id="mobile-tabbar">
+      <button class="mob-tab-btn active" id="mtab-digest" onclick="setMobileTab('digest')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l3-9h12l3 9"/><path d="M3 13v6a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-6h-6l-2 2h-4l-2-2H3z"/></svg>
+        <span>Digest</span>
+      </button>
+      <button class="mob-tab-btn" id="mtab-agents" onclick="setMobileTab('agents')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="none"><polygon points="13 2 4 14 11 14 10 22 20 10 13 10 13 2" fill="currentColor"/></svg>
+        <span>Agents</span>
+      </button>
+      <button class="mob-tab-btn" id="mtab-runs" onclick="setMobileTab('runs')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 13 16 15"/></svg>
+        <span>Runs</span>
+      </button>
+    </nav>
+  </main>
+</div>
+
+<!-- ── Run Drawer ── -->
+<div id="run-drawer">
+  <div class="drawer-bd" onclick="closeRunDrawer()"></div>
+  <div class="run-drawer-panel">
+    <div class="drawer-hdr" id="run-drawer-hdr"></div>
+    <div class="drawer-body" id="run-drawer-body"></div>
+    <div class="drawer-footer" id="run-drawer-ftr"></div>
+  </div>
+</div>
+
+<!-- ── Agent Sheet ── -->
+<div id="agent-sheet">
+  <div class="sheet-bd" onclick="closeAgentSheet()"></div>
+  <div class="agent-sheet-panel">
+    <div class="sheet-hdr">
+      <div>
+        <h2 style="margin:0;font-size:15px;font-weight:600" id="sheet-title">New dispatch</h2>
+        <p class="sheet-subtitle">Runs an agent on a schedule and delivers results to your digest.</p>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="closeAgentSheet()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body" id="sheet-body"></div>
+    <div class="sheet-ftr" id="sheet-ftr"></div>
+  </div>
+</div>
+
+<!-- ── Agent Config Sheet ── -->
+<div id="agent-config-sheet">
+  <div class="sheet-bd" onclick="closeAgentConfigSheet()"></div>
+  <div class="agent-sheet-panel">
+    <div class="sheet-hdr">
+      <div>
+        <h2 style="margin:0;font-size:15px;font-weight:600" id="cfg-sheet-title">New agent</h2>
+        <p class="sheet-subtitle">Defines what to research — goal, sources, and how to synthesize results.</p>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="closeAgentConfigSheet()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body" id="cfg-sheet-body"></div>
+    <div class="sheet-ftr" id="cfg-sheet-ftr"></div>
+  </div>
+</div>
+
+<!-- ── Settings sheet ── -->
+<div id="settings-sheet">
+  <div class="sheet-bd" onclick="closeSettingsSheet()"></div>
+  <div class="agent-sheet-panel">
+    <div class="sheet-hdr">
+      <div>
+        <h2 style="margin:0;font-size:15px;font-weight:600">Settings</h2>
+        <p class="sheet-subtitle">Restart the server after saving to apply changes.</p>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="closeSettingsSheet()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body" id="settings-sheet-body"></div>
+    <div class="sheet-ftr" id="settings-sheet-ftr"></div>
+  </div>
+</div>
+
+<!-- ── Toast ── -->
+<div id="toast"></div>
+
+<script>
+marked.use({
+  renderer: {
+    link({ href, title, tokens }) {
+      const text = this.parser.parseInline(tokens);
+      return `<a href="${href}" target="_blank" rel="noopener noreferrer"${title ? ` title="${title}"` : ''}>${text}</a>`;
+    }
+  }
+});
+
+const API_KEY = window.__API_KEY__ || '';
+
+// ── State ──
+let sidebarMode = 'agents'; // agents | runs
+let dispatchTab = 'digest';      // digest | active | archived
+let mobileTab = 'digest';    // digest | agents | runs
+let activeFilter = 'all';
+let isDark = true;
+
+let allDispatches = [];
+let allSessions = [];
+let digestItems = [];
+let digestOpenCards = new Set(); // ids of open digest cards
+let digestSeenCards = new Set(); // ids of cards that have been initialized (default open)
+
+let runDrawerSessionId = null;
+let activeJobId = null;
+let pendingJobId = null;
+let runningSessionId = null;
+let pendingSessionId = null;
+const queuedSessions = new Set();
+let pollTimer = null;
+let elapsedTimer = null;
+let elapsedSecs = 0;
+let refreshTimer = null;
+
+// AgentSheet state
+let sheetDispatch = null; // null = create, object = edit
+let sheetCat = 'news';
+let sheetSchedMode = 'simple'; // simple | custom
+let sheetFreq = 'daily';
+let sheetTime = '08:00';
+let sheetDays = [1,2,3,4,5];
+let sheetScheduleStr = '0 8 * * *';
+let sheetLabel = '';
+let sheetPrompt = '';
+
+// ── Categories ──
+const CATEGORIES = {
+  news:                  { hue: 8,   label: 'news' },
+  'local-news':          { hue: 25,  label: 'local-news' },
+  'local-infrastructure':{ hue: 200, label: 'local-infra' },
+  'local-events':        { hue: 150, label: 'local-events' },
+  'local-theater':       { hue: 320, label: 'local-theater' },
+  ai:                    { hue: 260, label: 'ai' },
+  media:                 { hue: 50,  label: 'media' },
+  'sf-social':           { hue: 175, label: 'sf-social' },
+  'sf-food':             { hue: 0,   label: 'sf-food' },
+  camping:               { hue: 130, label: 'camping' },
+  apartment:             { hue: 340, label: 'apartment' },
+  reddit:                { hue: 18,  label: 'reddit' },
+  craigslist:            { hue: 270, label: 'craigslist' },
+  vendor:                { hue: 220, label: 'vendor' },
+};
+
+function catColors(key) {
+  const fromConfig = allAgents.find(a => a.name === key);
+  const hue = fromConfig?.color ?? CATEGORIES[key]?.hue ?? 220;
+  if (isDark) return { bg: `oklch(0.32 0.07 ${hue})`, fg: `oklch(0.92 0.04 ${hue})`, bd: `oklch(0.42 0.08 ${hue})` };
+  return { bg: `oklch(0.93 0.04 ${hue})`, fg: `oklch(0.38 0.10 ${hue})`, bd: `oklch(0.85 0.05 ${hue})` };
+}
+
+function pillHTML(cat, dim) {
+  const col = catColors(cat);
+  const fromConfig = allAgents.find(a => a.name === cat);
+  const label = fromConfig?.label || CATEGORIES[cat]?.label || cat;
+  const op = dim ? 'opacity:0.6;' : '';
+  return `<span class="pill" style="${op}background:${col.bg};color:${col.fg};border-color:${col.bd}">${esc(label)}</span>`;
+}
+
+function statusBadgeHTML(status) {
+  return `<span class="status-badge s-${status}">${status}</span>`;
+}
+
+function sparkHTML(count) {
+  const seed = (count || 1) * 7 + 3;
+  let bars = '';
+  for (let i = 0; i < 8; i++) {
+    const v = ((Math.sin(seed + i * 1.7) + 1) / 2) * 0.7 + 0.25;
+    const color = i === 7 ? 'var(--accent)' : 'var(--line-2)';
+    bars += `<span class="spark-bar" style="height:${Math.round(v*18)}px;background:${color}"></span>`;
+  }
+  return `<span class="spark">${bars}</span>`;
+}
+
+// ── New dropdown ──
+function toggleNewMenu(id, e) {
+  e.stopPropagation();
+  const el = document.getElementById(id);
+  const isOpen = el.classList.contains('open');
+  closeNewMenus();
+  if (!isOpen) el.classList.add('open');
+}
+function closeNewMenus() {
+  document.querySelectorAll('.new-dropdown.open').forEach(el => el.classList.remove('open'));
+}
+document.addEventListener('click', closeNewMenus);
+
+// ── Dispatch helpers ──
+function expandDow(p) {
+  const out = new Set();
+  if (p === '*') { for (let i = 0; i < 7; i++) out.add(i); return out; }
+  for (const part of p.split(',')) {
+    if (part.includes('-')) {
+      const [a,b] = part.split('-').map(Number);
+      for (let i = a; i <= b; i++) out.add(i);
+    } else if (/^\d+$/.test(part)) {
+      out.add(+part);
+    } else {
+      for (let i = 0; i < 7; i++) out.add(i);
+    }
+  }
+  return out;
+}
+
+function formatTime12(h, m) {
+  if (!/^\d+$/.test(String(h)) || !/^\d+$/.test(String(m))) return `${h}:${m}`;
+  const hi = +h, mi = +m;
+  const am = hi < 12;
+  const h12 = ((hi + 11) % 12) + 1;
+  return `${h12}:${String(mi).padStart(2,'0')} ${am ? 'AM' : 'PM'}`;
+}
+
+function localToUtcTime(hh, mm) {
+  const total = hh * 60 + mm - new Date().getTimezoneOffset();
+  return [(((total / 60) % 24) + 24) % 24 | 0, ((total % 60) + 60) % 60];
+}
+function utcToLocalTime(hh, mm) {
+  const total = hh * 60 + mm + new Date().getTimezoneOffset();
+  return [(((total / 60) % 24) + 24) % 24 | 0, ((total % 60) + 60) % 60];
+}
+
+function humanizeCron(expr) {
+  if (!expr) return expr;
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length !== 5) return expr;
+  const [m, h, dom, mon, dow] = parts;
+  const [lh, lm] = (/^\d+$/.test(h) && /^\d+$/.test(m)) ? utcToLocalTime(+h, +m) : [h, m];
+  const time = formatTime12(lh, lm);
+  const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  if (dom === '*' && mon === '*' && dow === '*') return `Daily at ${time}`;
+  if (dom === '*' && mon === '*' && /^\d+$/.test(dow)) return `${DOW[+dow]}s at ${time}`;
+  if (dom === '*' && mon === '*' && dow.includes(',')) {
+    return dow.split(',').map(d => DOW[+d]).join('/') + ` at ${time}`;
+  }
+  if (dom === '*' && mon === '*' && dow.includes('-')) {
+    const [a,b] = dow.split('-').map(Number);
+    return `${DOW[a]}–${DOW[b]} at ${time}`;
+  }
+  return expr;
+}
+
+function nextRun(expr, now) {
+  if (!expr) return null;
+  now = now || new Date();
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length !== 5) return null;
+  const [mP, hP,,,dowP] = parts;
+  const tgtM = +mP, tgtH = +hP;
+  if (isNaN(tgtM) || isNaN(tgtH)) return null;
+  const [ltH, ltM] = utcToLocalTime(tgtH, tgtM);
+  const dows = expandDow(dowP);
+  for (let i = 0; i < 14; i++) {
+    const d = new Date(now);
+    d.setSeconds(0,0);
+    d.setDate(d.getDate() + i);
+    d.setHours(ltH, ltM);
+    if (i === 0 && d <= now) continue;
+    if (dows.has(d.getDay())) return d;
+  }
+  return null;
+}
+
+function relTime(date, now) {
+  if (!date) return '—';
+  now = now || new Date();
+  const ms = date - now;
+  if (ms < 0) return 'overdue';
+  const min = Math.round(ms / 60000);
+  if (min < 60) return `in ${min}m`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `in ${hr}h`;
+  const day = Math.round(hr / 24);
+  if (day === 1) return 'tomorrow';
+  if (day < 7) return `in ${day}d`;
+  return date.toLocaleDateString();
+}
+
+function shortDate(d) {
+  if (!d) return '—';
+  const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  return `${DOW[d.getDay()]} ${formatTime12(d.getHours(), d.getMinutes())}`;
+}
+
+function nextRunCellHTML(cron) {
+  const next = nextRun(cron);
+  return `<div style="display:flex;flex-direction:column;gap:2px">
+    <span style="font-size:12.5px">${esc(humanizeCron(cron))}</span>
+    <span class="meta-mono" style="font-size:11px">${esc(shortDate(next))} · ${esc(relTime(next))}</span>
+  </div>`;
+}
+
+// ── Utilities ──
+function headers() {
+  const h = { 'Content-Type': 'application/json' };
+  if (API_KEY) h['Authorization'] = `Bearer ${API_KEY}`;
+  return h;
+}
+
+function esc(str) {
+  if (str == null || str === false) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    + ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function fmtDuration(ms) {
+  if (!ms || ms <= 0) return '';
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(ms / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+  return `${m}m ${s}s`;
+}
+
+function fmtRelTime(iso) {
+  if (!iso) return '';
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60000)    return 'just now';
+  if (diff < 3600000)  return `${Math.floor(diff / 60000)}min ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}hr ago`;
+  return `${Math.floor(diff / 86400000)}d ago`;
+}
+
+function truncate(str, max) {
+  return str && str.length > max ? str.slice(0, max) + '…' : str || '';
+}
+
+function shortArg(argsJson) {
+  try { const a = JSON.parse(argsJson); return a.query || a.url || ''; } catch { return ''; }
+}
+
+// ── Toast ──
+let toastTimer = null;
+function setStatus(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  if (msg) toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+  else t.classList.remove('show');
+}
+
+// ── Theme ──
+function toggleTheme() {
+  isDark = !isDark;
+  document.body.classList.toggle('theme-light', !isDark);
+  localStorage.setItem('dispatch-theme', isDark ? 'dark' : 'light');
+  updateThemeBtn();
+  renderDispatch();
+  renderSidebar();
+}
+
+function updateThemeBtn() {
+  const sunSVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.9" y1="4.9" x2="6.3" y2="6.3"/><line x1="17.7" y1="17.7" x2="19.1" y2="19.1"/><line x1="4.9" y1="19.1" x2="6.3" y2="17.7"/><line x1="17.7" y1="6.3" x2="19.1" y2="4.9"/></svg>`;
+  const moonSVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>`;
+  const icon = isDark ? sunSVG : moonSVG;
+  document.querySelectorAll('#theme-btn-top, #theme-btn-mobile').forEach(b => { b.innerHTML = icon; });
+}
+
+// ── Sidebar mode / filter ──
+const FILTERS = ['all','news','local-news','local-infrastructure','local-events','local-theater',
+  'ai','media','sf-social','sf-food','camping','apartment','reddit','craigslist','vendor'];
+
+function initFilterStrip() {
+  const strip = document.getElementById('filter-strip');
+  const agentNames = sidebarMode === 'agents'
+    ? [...new Set(allDispatches.filter(c => c.enabled).map(c => c.agent))]
+    : [...new Set(allSessions.map(s => s.agent).filter(Boolean))];
+  const agents = agentNames.sort().map(name => ({
+    name,
+    label: allAgents.find(a => a.name === name)?.label || name,
+  }));
+  strip.innerHTML = [
+    `<button class="chip${activeFilter === 'all' ? ' active' : ''}" onclick="setFilter('all')">all</button>`,
+    ...agents.map(a => `<button class="chip${activeFilter === a.name ? ' active' : ''}" onclick="setFilter('${a.name}')">${esc(a.label)}</button>`),
+  ].join('');
+}
+
+function setFilter(f) {
+  activeFilter = f;
+  initFilterStrip();
+  renderSidebarList();
+}
+
+function setSidebarMode(mode) {
+  if (mode !== sidebarMode) activeFilter = 'all';
+  sidebarMode = mode;
+  document.getElementById('mode-agents').classList.toggle('active', mode === 'agents');
+  document.getElementById('mode-runs').classList.toggle('active', mode === 'runs');
+  renderSidebarList();
+  if (mode === 'agents') loadDispatches();
+  else loadSessions();
+}
+
+function updateModeBtns() {
+  const activeCrons = allDispatches.filter(c => c.enabled);
+  const iconBolt = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="none"><polygon points="13 2 4 14 11 14 10 22 20 10 13 10 13 2" fill="currentColor"/></svg>`;
+  const iconClock = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 13 16 15"/></svg>`;
+  document.getElementById('mode-agents').innerHTML = `${iconBolt} Agents <span class="cnt">${activeCrons.length}</span>`;
+  document.getElementById('mode-runs').innerHTML = `${iconClock} Runs <span class="cnt">${allSessions.length}</span>`;
+}
+
+function renderSidebar() {
+  initFilterStrip();
+  updateModeBtns();
+  renderSidebarList();
+}
+
+function renderSidebarList() {
+  const list = document.getElementById('sb-list');
+  if (sidebarMode === 'agents') {
+    let items = allDispatches.filter(c => c.enabled);
+    if (activeFilter !== 'all') items = items.filter(c => c.agent === activeFilter);
+    if (!items.length) { list.innerHTML = `<div class="empty-state" style="padding:24px;text-align:center;color:var(--fg-3);font-size:12px">No active agents</div>`; return; }
+    list.innerHTML = items.map(c => {
+      const label = c.label || truncate(c.prompt, 40);
+      return `<button class="sb-item" onclick="openAgentSheet(${c.id})">
+        <div class="sb-item-row">${pillHTML(c.agent)}<span style="margin-left:auto" class="meta-mono" style="font-size:10.5px">${c.run_count} runs</span></div>
+        <div class="sb-item-title">${esc(label)}</div>
+        <div class="sb-item-sub">${esc(humanizeCron(c.schedule))}</div>
+      </button>`;
+    }).join('');
+  } else {
+    let items = [...allSessions];
+    if (activeFilter !== 'all') items = items.filter(s => s.agent === activeFilter);
+    if (!items.length) { list.innerHTML = `<div style="padding:24px;text-align:center;color:var(--fg-3);font-size:12px">No runs yet</div>`; return; }
+    list.innerHTML = items.map(s => {
+      const isActive = runDrawerSessionId === s.id;
+      const isRunning = s.id === runningSessionId;
+      const isQueued = queuedSessions.has(s.id);
+      const runBadge = isRunning ? `<span class="qbadge running">running</span>` : isQueued ? `<span class="qbadge">queued</span>` : '';
+      return `<button class="sb-item${isActive ? ' active' : ''}${!s.viewed ? ' unread' : ''}" onclick="openRunDrawer(${s.id})">
+        <div class="sb-item-row">${pillHTML(s.agent)} ${runBadge} <span class="meta-mono" style="margin-left:auto;font-size:10.5px">${esc(fmtTime(s.started_at))}</span>${s.total_duration_ms > 0 ? `<span class="meta-mono" style="font-size:10.5px;color:var(--fg-4)">${fmtDuration(s.total_duration_ms)}</span>` : ''}</div>
+        <div class="sb-item-prompt">${esc(s.prompt || '—')}</div>
+      </button>`;
+    }).join('');
+  }
+}
+
+// ── Topbar ──
+function updateTopbar() {
+  const active = allDispatches.filter(c => c.enabled);
+  const archived = allDispatches.filter(c => !c.enabled);
+  const nr = active.length ? relTime(nextRun(active[0]?.schedule)) : '';
+  document.getElementById('topbar-meta').textContent =
+    `${active.length} active${nr ? ' · next run ' + nr : ''}`;
+  document.getElementById('tc-digest').textContent = digestItems.length || '';
+  document.getElementById('tc-active').textContent = active.length || '';
+  document.getElementById('tc-archived').textContent = archived.length || '';
+  document.getElementById('tc-library').textContent = allAgents.length || '';
+}
+
+function setTab(tab) {
+  dispatchTab = tab;
+  ['digest','active','archived','library'].forEach(t => {
+    document.getElementById('tab-' + t).classList.toggle('active', t === tab);
+  });
+  renderContent();
+}
+
+// ── Mobile tab ──
+function setMobileTab(tab) {
+  mobileTab = tab;
+  ['digest','agents','runs'].forEach(t => {
+    document.getElementById('mtab-' + t).classList.toggle('active', t === tab);
+  });
+  const titles = { digest: 'Digest', agents: 'Agents', runs: 'Runs' };
+  document.getElementById('mob-title').childNodes[0].textContent = titles[tab];
+  const counts = {
+    digest: digestItems.length,
+    agents: allDispatches.filter(c => c.enabled).length,
+    runs: allSessions.length
+  };
+  document.getElementById('mob-count').textContent = counts[tab] || '';
+  renderMobileContent();
+}
+
+// ── Content rendering ──
+function isMobile() { return window.innerWidth <= 640; }
+
+function renderDispatch() {
+  if (isMobile()) renderMobileContent();
+  else renderContent();
+}
+
+function renderContent() {
+  if (dispatchTab === 'digest') renderDigest();
+  else if (dispatchTab === 'active') renderDispatchesTable(allDispatches.filter(c => c.enabled), 'active');
+  else if (dispatchTab === 'archived') renderDispatchesTable(allDispatches.filter(c => !c.enabled), 'archived');
+  else renderAgentLibrary();
+}
+
+function renderMobileContent() {
+  if (mobileTab === 'digest') renderDigest();
+  else if (mobileTab === 'agents') renderMobileAgents();
+  else renderMobileRuns();
+}
+
+// ── Digest ──
+function renderDigest() {
+  const el = document.getElementById('content');
+  if (!digestItems.length) {
+    el.innerHTML = `<div class="empty-state">No active agents with recent runs.</div>`;
+    return;
+  }
+  const sorted = [...digestItems].sort((a,b) => {
+    const ta = a.session ? new Date(a.session.started_at).getTime() : 0;
+    const tb = b.session ? new Date(b.session.started_at).getTime() : 0;
+    return tb - ta;
+  });
+  sorted.forEach(({ dispatch: c }) => {
+    const id = `dc-${c.id}`;
+    if (!digestSeenCards.has(id)) {
+      digestSeenCards.add(id);
+      digestOpenCards.add(id);
+    }
+  });
+  const allCollapsed = digestOpenCards.size === 0;
+  const chevR = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>`;
+  const toggleBtn = `<button class="btn btn-ghost btn-sm" onclick="digestToggleAll()" id="digest-toggle-btn">${allCollapsed ? 'Expand all' : 'Collapse all'}</button>`;
+  let cards = sorted.map(({ dispatch: c, session: s }) => {
+    const id = `dc-${c.id}`;
+    const isOpen = digestOpenCards.has(id);
+    const label = c.label || truncate(c.prompt, 60);
+    const runs = c.max_runs ? `${c.run_count}/${c.max_runs}` : `${c.run_count}`;
+    const when = s ? fmtRelTime(s.started_at) : '';
+
+    let body = '';
+    if (!s) {
+      body = `<div style="padding:12px 22px;font-size:13px;color:var(--fg-3);font-style:italic">No runs yet.</div>`;
+    } else if (!s.content) {
+      body = `<div style="padding:12px 22px;font-size:13px;color:var(--fg-3);font-style:italic">No output recorded.</div>`;
+    } else {
+      body = `<div style="padding:16px 22px 22px"><div class="md" style="font-size:14px;line-height:1.6;color:var(--fg-2)">${marked.parse(s.content)}</div></div>`;
+    }
+
+    const sessionOnclick = s ? `openRunDrawer(${s.id})` : `openAgentSheet(${c.id})`;
+
+    return `<article class="digest-card" id="${id}">
+      <div class="digest-card-hdr${isOpen ? ' open' : ''}" onclick="digestToggleCard('${id}', event)" data-session="${s?.id || ''}" data-dispatch="${c.id}">
+        ${pillHTML(c.agent)}
+        <h2 class="digest-card-title">${esc(label)}</h2>
+        <span class="meta-mono">${runs} runs</span>
+        ${when ? `<span class="meta-mono">·</span><span class="meta-mono">${esc(when)}</span>` : ''}
+        <button class="btn btn-ghost btn-sm" style="margin-left:4px" onclick="event.stopPropagation();digestToggleCard('${id}', event)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(${isOpen?90:0}deg);transition:transform 0.15s"><polyline points="9 6 15 12 9 18"/></svg>
+        </button>
+      </div>
+      ${isOpen ? `<div class="digest-card-content">${body}</div>` : ''}
+    </article>`;
+  }).join('');
+
+  el.innerHTML = `<div class="digest-list">
+    <div style="display:flex;align-items:center;margin-bottom:12px;gap:8px">
+      <span class="meta-mono" style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em">${digestItems.length} item${digestItems.length !== 1 ? 's' : ''} · today</span>
+      ${toggleBtn}
+    </div>
+    ${cards}
+  </div>`;
+}
+
+function digestToggleAll() {
+  const allCollapsed = digestOpenCards.size === 0;
+  if (allCollapsed) {
+    digestItems.forEach(({ dispatch: c }) => digestOpenCards.add(`dc-${c.id}`));
+  } else {
+    digestOpenCards.clear();
+  }
+  renderDispatch();
+}
+
+function digestToggleCard(id, event) {
+  event.stopPropagation();
+  if (digestOpenCards.has(id)) {
+    digestOpenCards.delete(id);
+  } else {
+    digestOpenCards.add(id);
+  }
+  renderDispatch();
+}
+
+// ── Agents Table ──
+function renderDispatchesTable(dispatches, kind) {
+  const el = document.getElementById('content');
+  if (!dispatches.length) {
+    el.innerHTML = `<div class="empty-state">${kind === 'active' ? 'No active agents.' : 'No archived agents.'}</div>`;
+    return;
+  }
+
+  const playIcon = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="none"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor"/></svg>`;
+  const editIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16v4z"/><line x1="14" y1="6" x2="18" y2="10"/></svg>`;
+  const archIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><line x1="10" y1="13" x2="14" y2="13"/></svg>`;
+  const trashIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 20 7"/><path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>`;
+
+  const rows = dispatches.map(c => {
+    const runs = c.max_runs ? `${c.run_count}/${c.max_runs}` : `${c.run_count}`;
+    const actions = kind === 'active'
+      ? `<button class="btn btn-sm" title="Run now" onclick="event.stopPropagation();runDispatchNow(${c.id})">${playIcon}</button>
+         <button class="btn btn-sm" onclick="event.stopPropagation();openAgentSheet(${c.id})">${editIcon} Edit</button>
+         <button class="btn btn-ghost btn-sm" title="Archive" onclick="event.stopPropagation();toggleDispatch(${c.id},false)">${archIcon}</button>`
+      : `<button class="btn btn-sm" onclick="event.stopPropagation();toggleDispatch(${c.id},true)">Enable</button>
+         <button class="btn btn-ghost btn-sm btn-danger" title="Delete" onclick="event.stopPropagation();deleteDispatch(${c.id})">${trashIcon}</button>`;
+    const schedCell = kind === 'active' ? nextRunCellHTML(c.schedule) : `<span class="meta-mono">${esc(humanizeCron(c.schedule))}</span>`;
+    return `<tr onclick="openAgentSheet(${c.id})">
+      <td>${pillHTML(c.agent)}</td>
+      <td><span style="font-weight:500">${esc(c.label || '')}</span></td>
+      <td><span style="color:var(--fg-2);display:block;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.prompt)}</span></td>
+      <td>${schedCell}</td>
+      <td class="r"><span class="mono" style="color:var(--fg-2)">${runs}</span></td>
+      <td class="r">${kind === 'active' ? sparkHTML(c.run_count) : '<span class="meta">—</span>'}</td>
+      <td>${statusBadgeHTML(kind === 'active' ? 'active' : 'archived')}</td>
+      <td class="r"><div style="display:inline-flex;gap:4px" onclick="event.stopPropagation()">${actions}</div></td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `<div style="padding:16px 24px 80px">
+    <div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden">
+      <table class="agents-table">
+        <thead><tr style="background:var(--panel-2)">
+          <th>Agent</th><th>Label</th><th>Prompt</th><th>Schedule</th>
+          <th class="r">Runs</th><th class="r">Last 7</th><th>Status</th><th class="r">Actions</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+// ── Mobile content ──
+function renderMobileAgents() {
+  const active = allDispatches.filter(c => c.enabled);
+  const archived = allDispatches.filter(c => !c.enabled);
+
+  const el = document.getElementById('content');
+  const clockIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 13 16 15"/></svg>`;
+  const playIcon = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="none"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor"/></svg>`;
+  const editIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16v4z"/><line x1="14" y1="6" x2="18" y2="10"/></svg>`;
+
+  let mAgentsView = el.dataset.agentView || 'active';
+  const shown = mAgentsView === 'active' ? active : archived;
+
+  const cards = shown.map(c => {
+    const label = c.label || truncate(c.prompt, 50);
+    const footer = mAgentsView === 'active'
+      ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line);display:flex;align-items:center;gap:6px">
+           <span style="color:var(--fg-3);flex-shrink:0">${clockIcon}</span>
+           <span style="font-size:12px;color:var(--fg-2)">${esc(humanizeCron(c.schedule))}</span>
+           <span class="meta-mono" style="font-size:10.5px;color:var(--fg-3)">· ${esc(relTime(nextRun(c.schedule)))}</span>
+           <div style="margin-left:auto;display:flex;gap:4px">
+             <button class="btn btn-sm" title="Run now" onclick="event.stopPropagation();runDispatchNow(${c.id})">${playIcon}</button>
+             <button class="btn btn-sm" onclick="event.stopPropagation();openAgentSheet(${c.id})">${editIcon}</button>
+           </div>
+         </div>`
+      : `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line);display:flex;align-items:center;gap:6px">
+           ${statusBadgeHTML('archived')}
+           <button class="btn btn-sm" style="margin-left:auto" onclick="event.stopPropagation();openAgentSheet(${c.id})">${editIcon}</button>
+         </div>`;
+    return `<div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;text-align:left;color:var(--fg)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        ${pillHTML(c.agent)}
+        <span class="meta-mono" style="margin-left:auto;font-size:10.5px;color:var(--fg-3)">${c.run_count} runs</span>
+      </div>
+      <div style="font-size:14.5px;font-weight:600;line-height:1.3;margin-bottom:4px">${esc(label)}</div>
+      <div style="font-size:13px;color:var(--fg-3);line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${esc(c.prompt)}</div>
+      ${footer}
+    </div>`;
+  }).join('');
+
+  el.dataset.agentView = mAgentsView;
+  el.innerHTML = `<div style="padding:10px 14px 24px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:3px;gap:2px;margin-bottom:12px">
+      <button class="seg-btn${mAgentsView==='active'?' active':''}" onclick="this.closest('#content').dataset.agentView='active';renderMobileAgents()">Active · ${active.length}</button>
+      <button class="seg-btn${mAgentsView==='archived'?' active':''}" onclick="this.closest('#content').dataset.agentView='archived';renderMobileAgents()">Archived · ${archived.length}</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">${cards || '<div style="text-align:center;padding:40px;color:var(--fg-3);font-size:13px">No agents</div>'}</div>
+  </div>`;
+}
+
+function renderMobileRuns() {
+  const el = document.getElementById('content');
+  if (!allSessions.length) {
+    el.innerHTML = `<div class="empty-state">No runs yet.</div>`;
+    return;
+  }
+  const cards = allSessions.map(s => `
+    <button style="background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;text-align:left;cursor:pointer;color:var(--fg);display:block;width:100%" onclick="openRunDrawer(${s.id})">
+      <div style="display:flex;align-items:center;gap:6px">
+        ${pillHTML(s.agent)}
+        <span class="meta-mono" style="margin-left:auto;font-size:10.5px">${esc(fmtTime(s.started_at))}</span>
+        ${s.total_duration_ms > 0 ? `<span class="meta-mono" style="font-size:10.5px;color:var(--fg-4)">${fmtDuration(s.total_duration_ms)}</span>` : ''}
+      </div>
+      <div style="margin-top:6px;font-size:13.5px;color:var(--fg);line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.prompt || '—')}</div>
+    </button>`).join('');
+  el.innerHTML = `<div style="padding:10px 14px 24px;display:flex;flex-direction:column;gap:6px">${cards}</div>`;
+}
+
+// ── Run Drawer ──
+async function openRunDrawer(sessionId) {
+  runDrawerSessionId = sessionId;
+  renderSidebarList();
+
+  const drawer = document.getElementById('run-drawer');
+  drawer.classList.add('open');
+
+  document.getElementById('run-drawer-hdr').innerHTML = `<span class="meta-mono" style="font-size:11px">Loading…</span>`;
+  document.getElementById('run-drawer-body').innerHTML = '';
+  document.getElementById('run-drawer-ftr').innerHTML = '';
+
+  try {
+    const r = await fetch(`/api/sessions/${sessionId}`, { headers: headers() });
+    if (!r.ok) throw new Error();
+    const s = await r.json();
+    renderRunDrawer(s);
+  } catch {
+    document.getElementById('run-drawer-hdr').innerHTML = `<span style="color:var(--fg-3)">Error loading run.</span>`;
+  }
+}
+
+function renderRunDrawer(s) {
+  const agent = s.agent || 'general';
+  const userMsg = s.messages.find(m => m.role === 'user');
+  const assistantMsgs = s.messages.filter(m => m.role === 'assistant');
+  const lastResponse = assistantMsgs[assistantMsgs.length - 1];
+  const errorMsg = s.messages.find(m => m.role === 'error');
+  const totalDuration = s.tool_calls.reduce((a, t) => a + (t.duration_ms || 0), 0);
+
+  const isRunning = !!(activeJobId && s.id === runningSessionId);
+  const stopBtn = isRunning
+    ? `<span id="rd-elapsed" class="meta-mono" style="margin-right:8px">${elapsedSecs}s</span><button onclick="cancelJob()" style="padding:3px 10px;background:var(--danger);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:var(--font-mono);font-size:11px">Stop</button>`
+    : '';
+
+  document.getElementById('run-drawer-hdr').innerHTML = `
+    ${pillHTML(agent)}
+    <span class="meta-mono" style="font-size:11px">${esc(fmtTime(s.started_at))}</span>
+    ${totalDuration > 0 ? `<span class="meta-mono" style="margin-left:auto;font-size:11px">${fmtDuration(totalDuration)}</span>` : '<span style="margin-left:auto"></span>'}
+    ${stopBtn}
+    <button class="btn btn-ghost btn-sm" onclick="closeRunDrawer()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+    </button>
+  `;
+
+  let body = '';
+  if (userMsg) {
+    body += `<div class="drawer-section-label">Prompt</div>
+      <p style="margin:0 0 0;font-size:14px;color:var(--fg);line-height:1.5">${esc(userMsg.content)}</p>`;
+  }
+  if (lastResponse) {
+    body += `<div class="drawer-section-label mt">Response</div>
+      <div class="md" style="font-size:13px;color:var(--fg-2);line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:14px">${marked.parse(lastResponse.content)}</div>`;
+  }
+  if (errorMsg) {
+    body += `<div class="drawer-section-label mt" style="color:var(--danger)">Error</div>
+      <div style="font-size:13px;color:var(--danger);background:var(--bg-3);border:1px solid var(--line);border-radius:8px;padding:14px;font-family:var(--font-mono)">${esc(errorMsg.content)}</div>`;
+  }
+  if (s.tool_calls.length > 0) {
+    body += `<div class="drawer-section-label mt">Tool Calls</div>`;
+    s.tool_calls.forEach(t => {
+      let args = t.args;
+      try { args = JSON.stringify(JSON.parse(t.args), null, 2); } catch {}
+      let result = t.result;
+      try { result = JSON.stringify(JSON.parse(t.result), null, 2); } catch {}
+      body += `<details class="tool-call">
+        <summary>
+          <span class="tool-name">${esc(t.tool_name)}</span>
+          <span style="color:var(--fg-3);font-size:10px;font-family:var(--font-mono)">${esc(shortArg(t.args))}</span>
+          <span class="tool-dur">${t.duration_ms}ms</span>
+        </summary>
+        <div class="tool-body"><pre><strong>args:</strong>\n${esc(args)}\n\n<strong>result:</strong>\n${esc(truncate(result, 2000))}</pre></div>
+      </details>`;
+    });
+  }
+  if (s.logs) {
+    body += `<details class="log-section"${isRunning ? ' open' : ''} style="margin-top:20px">
+      <summary>Pipeline logs</summary>
+      <pre class="log-body" id="rd-log-pre">${esc(s.logs)}</pre>
+    </details>`;
+  }
+
+  document.getElementById('run-drawer-body').innerHTML = body;
+  if (isRunning) {
+    const pre = document.getElementById('rd-log-pre');
+    if (pre) pre.scrollTop = pre.scrollHeight;
+  }
+
+  const playIcon = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="none"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor"/></svg>`;
+  const cronId = s.dispatch_id;
+  document.getElementById('run-drawer-ftr').innerHTML = `
+    <button class="btn btn-sm" onclick="rerunSession(${s.id})">${playIcon} Re-run</button>
+    ${cronId ? '' : `<button class="btn btn-sm" onclick="promoteToAgent(${s.id})">Promote to agent</button>`}
+  `;
+}
+
+function closeRunDrawer() {
+  document.getElementById('run-drawer').classList.remove('open');
+  runDrawerSessionId = null;
+  renderSidebarList();
+}
+
+async function rerunSession(sessionId) {
+  try {
+    const sr = await fetch(`/api/sessions/${sessionId}`, { headers: headers() });
+    if (!sr.ok) return;
+    const s = await sr.json();
+    const userMsg = s.messages.find(m => m.role === 'user');
+    if (!userMsg) return;
+    const res = await fetch('/api/jobs', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ agent: s.agent, messages: [{ role: 'user', content: userMsg.content }] })
+    });
+    if (!res.ok) { setStatus('error'); return; }
+    const { job_id, session_id } = await res.json();
+    if (session_id) { queuedSessions.add(session_id); await loadSessions(); openRunDrawer(session_id); }
+    startPolling(job_id);
+    startElapsed();
+    setStatus('running…');
+  } catch { setStatus('failed'); }
+}
+
+async function promoteToAgent(sessionId) {
+  const sr = await fetch(`/api/sessions/${sessionId}`, { headers: headers() });
+  if (!sr.ok) return;
+  const s = await sr.json();
+  const userMsg = s.messages.find(m => m.role === 'user');
+  openAgentSheet({ agent: s.agent, prompt: userMsg?.content || '', label: '', schedule: '0 8 * * *' });
+}
+
+async function openRunInMain(sessionId) {
+  closeRunDrawer();
+  if (isMobile()) {
+    setMobileTab('runs');
+    return;
+  }
+  setSidebarMode('runs');
+  runDrawerSessionId = sessionId;
+  renderSidebarList();
+  // scroll selected sidebar item into view
+  requestAnimationFrame(() => {
+    const el = document.querySelector('#sb-list .sb-item.active');
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  });
+  // render session in main content area
+  try {
+    const r = await fetch(`/api/sessions/${sessionId}`, { headers: headers() });
+    if (!r.ok) return;
+    const s = await r.json();
+    renderSessionFull(s);
+  } catch {}
+}
+
+function renderSessionFull(s) {
+  const el = document.getElementById('content');
+  const isRunning = s.id === runningSessionId;
+  let body = '';
+  if (s.content) {
+    body += `<div class="md" style="font-size:14px;line-height:1.7;color:var(--fg-2);margin-bottom:24px">${marked.parse(s.content)}</div>`;
+  }
+  if (s.tool_calls?.length) {
+    body += s.tool_calls.map(tc => {
+      const args = typeof tc.input === 'object' ? JSON.stringify(tc.input, null, 2) : String(tc.input ?? '');
+      const result = typeof tc.result === 'object' ? JSON.stringify(tc.result, null, 2) : String(tc.result ?? '');
+      return `<details class="tool-call"><summary>${esc(tc.name)}</summary>
+        <div class="tool-body"><pre><strong>args:</strong>\n${esc(args)}\n\n<strong>result:</strong>\n${esc(truncate(result, 2000))}</pre></div>
+      </details>`;
+    }).join('');
+  }
+  if (s.logs) {
+    body += `<details class="log-section"${isRunning ? ' open' : ''} style="margin-top:20px">
+      <summary>Pipeline logs</summary>
+      <pre class="log-body">${esc(s.logs)}</pre>
+    </details>`;
+  }
+  el.innerHTML = `<div style="padding:24px 28px 80px;max-width:860px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+      ${pillHTML(s.agent)}
+      <span style="font-size:13px;color:var(--fg-2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.prompt || '')}</span>
+      <span class="meta-mono" style="font-size:11px;color:var(--fg-3);flex-shrink:0">${fmtTime(s.started_at)}</span>
+    </div>
+    ${body || '<div style="color:var(--fg-3);font-size:13px;font-style:italic">No output recorded.</div>'}
+  </div>`;
+}
+
+// ── Agent Sheet ──
+async function openAgentSheet(dispatchIdOrObj) {
+  if (!allAgents.length) {
+    setStatus('create an agent first');
+    openAgentConfigSheet(null);
+    return;
+  }
+
+  let dispatch = null;
+  if (dispatchIdOrObj !== null && typeof dispatchIdOrObj === 'number') {
+    const res = await fetch('/api/dispatches', { headers: headers() });
+    if (res.ok) {
+      const dispatches = await res.json();
+      dispatch = dispatches.find(d => d.id === dispatchIdOrObj) || null;
+    }
+  } else if (dispatchIdOrObj && typeof dispatchIdOrObj === 'object') {
+    dispatch = dispatchIdOrObj;
+  }
+
+  sheetDispatch = dispatch;
+  sheetCat = dispatch?.agent || sheetCat;
+  if (!allAgents.find(a => a.name === sheetCat)) {
+    sheetCat = allAgents[0].name;
+  }
+  sheetSchedMode = 'simple';
+  sheetDays = [1,2,3,4,5];
+  sheetLabel = dispatch?.label || '';
+  sheetPrompt = dispatch?.prompt || '';
+
+  if (dispatch?.schedule && dispatch.trigger_type !== 'once') {
+    sheetScheduleStr = dispatch.schedule;
+    const parts = dispatch.schedule.trim().split(/\s+/);
+    if (parts.length === 5) {
+      const [mm, hh,,,dow] = parts;
+      if (/^\d+$/.test(hh) && /^\d+$/.test(mm)) {
+        const [lhh, lmm] = utcToLocalTime(+hh, +mm);
+        sheetTime = `${String(lhh).padStart(2,'0')}:${String(lmm).padStart(2,'0')}`;
+      }
+      const isHourly = dispatch.schedule === '0 * * * *';
+      const isDaily = /^\d+ \d+ \* \* \*$/.test(dispatch.schedule);
+      const isWeekly = /^\d+ \d+ \* \* \d$/.test(dispatch.schedule);
+      sheetFreq = isHourly ? 'hourly' : isDaily ? 'daily' : isWeekly ? 'weekly' : 'custom';
+      if (sheetFreq === 'custom') { sheetSchedMode = 'custom'; sheetFreq = 'daily'; }
+      if (isWeekly) sheetDays = [+parts[4]];
+    }
+  } else {
+    sheetScheduleStr = dispatch?.schedule || '0 8 * * *';
+    sheetFreq = 'daily';
+    sheetTime = '08:00';
+  }
+
+  document.getElementById('sheet-title').textContent = dispatch ? 'Edit dispatch' : 'New dispatch';
+  renderSheetBody();
+  document.getElementById('agent-sheet').classList.add('open');
+}
+
+function closeAgentSheet() {
+  document.getElementById('agent-sheet').classList.remove('open');
+  sheetDispatch = null;
+}
+
+function renderSheetBody() {
+  const dispatch = sheetDispatch;
+  const isEdit = !!dispatch;
+
+  const catKeys = allAgents.map(a => a.name);
+  const catPicker = catKeys.map(k => {
+    const isActive = k === sheetCat;
+    const title = allAgents.find(a => a.name === k)?.label || CATEGORIES[k]?.label || k;
+    return `<button class="cat-pick-btn${isActive ? ' active' : ''}" onclick="sheetSetCat('${k}')" title="${esc(title)}">${pillHTML(k, !isActive)}</button>`;
+  }).join('');
+
+  const schedModeHTML = `<div class="sched-mode">
+    <button class="sched-mode-btn${sheetSchedMode==='simple'?' active':''}" onclick="sheetSetSchedMode('simple')">Simple</button>
+    <button class="sched-mode-btn${sheetSchedMode==='custom'?' active':''}" onclick="sheetSetSchedMode('custom')">Custom</button>
+  </div>`;
+
+  let schedContent = '';
+  if (sheetSchedMode === 'simple') {
+    const dayLabels = ['S','M','T','W','T','F','S'];
+    const dayPicker = (sheetFreq === 'weekly') ? `<div class="day-picker" style="margin-top:8px">
+      ${dayLabels.map((d,i) => `<button class="day-btn${sheetDays.includes(i)?' active':''}" onclick="sheetToggleDay(${i})">${d}</button>`).join('')}
+    </div>` : '';
+    const preview = sheetScheduleStr;
+    schedContent = `<div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;gap:8px;align-items:center">
+        <select class="select" style="flex:0 0 130px" onchange="sheetSetFreq(this.value)">
+          <option value="hourly"${sheetFreq==='hourly'?' selected':''}>Hourly</option>
+          <option value="daily"${sheetFreq==='daily'?' selected':''}>Daily</option>
+          <option value="weekly"${sheetFreq==='weekly'?' selected':''}>Weekly</option>
+        </select>
+        <span class="meta" style="flex-shrink:0">at</span>
+        <input class="input mono-input" value="${esc(sheetTime)}" style="flex:0 0 100px" oninput="sheetSetTime(this.value)" type="time">
+      </div>
+      ${dayPicker}
+      <div class="meta-mono" style="font-size:11px">↳ schedule <span style="color:var(--fg-2)">${esc(sheetBuildSchedule())}</span></div>
+      <div class="meta-mono" style="font-size:11px;color:var(--fg-3)">${Intl.DateTimeFormat().resolvedOptions().timeZone}</div>
+    </div>`;
+  } else {
+    schedContent = `<div style="display:flex;flex-direction:column;gap:8px">
+      <input class="input mono-input" value="${esc(sheetScheduleStr)}" oninput="sheetSetScheduleStr(this.value)" placeholder="0 8 * * *">
+      <div class="meta-mono" style="font-size:11px">↳ ${esc(humanizeCron(sheetScheduleStr))}</div>
+    </div>`;
+  }
+
+  const promptVal = esc(sheetPrompt);
+  const labelVal = esc(sheetLabel);
+  const untilVal = dispatch?.repeat_until ? dispatch.repeat_until.slice(0,10) : '';
+  const maxVal = dispatch?.max_runs != null ? dispatch.max_runs : '';
+
+  document.getElementById('sheet-body').innerHTML = `
+    <div class="field"><div class="field-lbl">Category</div><div class="cat-picker">${catPicker}</div></div>
+    <div class="field">
+      <div class="field-lbl">Label</div>
+      <input class="input" id="s-label" placeholder="e.g. SF Food Briefing" value="${labelVal}" oninput="sheetLabel=this.value">
+      <div class="field-hint">Short, human-readable</div>
+    </div>
+    ${(() => { const needsPrompt = allAgents.find(a => a.name === sheetCat)?.requires_prompt; return `<div class="field">
+      <div class="field-lbl">Prompt${needsPrompt ? ' *' : ''}</div>
+      <textarea class="textarea" id="s-prompt" rows="4" placeholder="${needsPrompt ? 'Required — what should the agent answer or fetch?' : 'Optional — leave blank to use the agent\'s built-in goal'}" style="resize:vertical" oninput="sheetPrompt=this.value">${promptVal}</textarea>
+    </div>`; })()}
+    <div class="field">
+      <div class="field-lbl">Schedule</div>
+      ${schedModeHTML}
+      ${schedContent}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="field"><div class="field-lbl">Until</div><input class="input mono-input" id="s-until" placeholder="never" type="date" value="${untilVal}"></div>
+      <div class="field"><div class="field-lbl">Max runs</div><input class="input mono-input" id="s-maxruns" placeholder="∞" type="number" min="1" value="${maxVal}"></div>
+    </div>
+  `;
+
+  const archBtn = isEdit
+    ? `<button class="btn btn-sm btn-danger" style="margin-right:auto" onclick="archiveDispatchFromSheet()">${dispatch.enabled ? 'Archive' : 'Enable'}</button>` : '';
+  document.getElementById('sheet-ftr').innerHTML = `
+    ${archBtn}
+    <button class="btn btn-sm" style="margin-left:${isEdit?'0':'auto'}" onclick="closeAgentSheet()">Cancel</button>
+    <button class="btn btn-primary btn-sm" onclick="saveAgent()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 12 10 17 19 7"/></svg>
+      ${isEdit ? 'Save' : 'Create agent'}
+    </button>
+  `;
+}
+
+function sheetSetCat(k) { sheetCat = k; renderSheetBody(); }
+function sheetSetSchedMode(m) { sheetSchedMode = m; renderSheetBody(); }
+function sheetSetFreq(v) { sheetFreq = v; renderSheetBody(); }
+function sheetSetTime(v) { sheetTime = v; renderSheetBody(); }
+function sheetSetScheduleStr(v) { sheetScheduleStr = v; renderSheetBody(); }
+function sheetToggleDay(i) {
+  if (sheetDays.includes(i)) sheetDays = sheetDays.filter(d => d !== i);
+  else sheetDays = [...sheetDays, i].sort();
+  renderSheetBody();
+}
+
+function sheetBuildSchedule() {
+  if (sheetSchedMode === 'custom') return sheetScheduleStr;
+  const [lhh, lmm] = sheetTime.split(':').map(Number);
+  if (sheetFreq === 'hourly') return '0 * * * *';
+  const [uhh, umm] = localToUtcTime(lhh, lmm);
+  if (sheetFreq === 'daily') return `${umm} ${uhh} * * *`;
+  if (sheetFreq === 'weekly') {
+    const dow = sheetDays.length ? sheetDays.sort().join(',') : '1';
+    return `${umm} ${uhh} * * ${dow}`;
+  }
+  return `${umm} ${uhh} * * *`;
+}
+
+async function saveAgent() {
+  const label = document.getElementById('s-label')?.value.trim() || '';
+  const prompt = document.getElementById('s-prompt')?.value.trim() || '';
+  const untilVal = document.getElementById('s-until')?.value || '';
+  const maxVal = document.getElementById('s-maxruns')?.value || '';
+  const agentRequiresPrompt = allAgents.find(a => a.name === sheetCat)?.requires_prompt;
+  if (agentRequiresPrompt && !prompt) { setStatus('prompt required for this agent'); return; }
+  const schedule = sheetBuildSchedule();
+  const payload = {
+    agent: sheetCat,
+    prompt,
+    label: label || humanizeCron(schedule),
+    schedule,
+    trigger_type: 'cron',
+    repeat_until: untilVal ? new Date(untilVal).toISOString() : null,
+    max_runs: maxVal ? parseInt(maxVal) : null,
+  };
+  try {
+    const isEdit = !!sheetDispatch?.id;
+    const res = await fetch(isEdit ? `/api/dispatches/${sheetDispatch.id}` : '/api/dispatches', {
+      method: isEdit ? 'PUT' : 'POST',
+      headers: headers(),
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) { setStatus('error saving'); return; }
+    setStatus(isEdit ? 'saved' : 'agent created');
+    closeAgentSheet();
+    await refreshAll();
+  } catch { setStatus('failed'); }
+}
+
+async function archiveDispatchFromSheet() {
+  if (!sheetDispatch?.id) return;
+  const newEnabled = !sheetDispatch.enabled;
+  await fetch(`/api/dispatches/${sheetDispatch.id}`, {
+    method: 'PATCH', headers: headers(),
+    body: JSON.stringify({ enabled: newEnabled }),
+  });
+  setStatus(newEnabled ? 'enabled' : 'archived');
+  closeAgentSheet();
+  await refreshAll();
+}
+
+// ── Data loading ──
+async function loadSessions() {
+  const agent = activeFilter === 'all' ? '' : `&agent=${activeFilter}`;
+  try {
+    const [sr, jr] = await Promise.all([
+      fetch(`/api/sessions?limit=100${agent}`, { headers: headers() }),
+      fetch('/api/jobs/active', { headers: headers() }),
+    ]);
+    if (!sr.ok) return;
+    allSessions = await sr.json();
+    if (jr.ok) {
+      const activeJobs = await jr.json();
+      queuedSessions.clear();
+      for (const job of activeJobs) {
+        if (job.status === 'queued' || job.status === 'running') queuedSessions.add(job.session_id);
+        if (activeJobId !== job.job_id) startPolling(job.job_id);
+      }
+    }
+    renderSidebar();
+    if (mobileTab === 'runs') renderMobileContent();
+  } catch {}
+}
+
+async function loadDispatches() {
+  try {
+    const r = await fetch('/api/dispatches', { headers: headers() });
+    if (!r.ok) return;
+    allDispatches = await r.json();
+    updateTopbar();
+    renderSidebar();
+  } catch {}
+}
+
+async function loadDigest() {
+  try {
+    const r = await fetch('/api/dispatches/digest', { headers: headers() });
+    if (!r.ok) return;
+    digestItems = await r.json();
+    updateTopbar();
+  } catch {}
+}
+
+async function refreshAll() {
+  await Promise.all([loadSessions(), loadDispatches(), loadDigest(), loadAgents()]);
+  renderDispatch();
+}
+
+// ── Dispatch actions ──
+async function toggleDispatch(id, enabled) {
+  await fetch(`/api/dispatches/${id}`, {
+    method: 'PATCH', headers: headers(),
+    body: JSON.stringify({ enabled }),
+  });
+  setStatus(enabled ? 'enabled' : 'archived');
+  await refreshAll();
+}
+
+async function deleteDispatch(id) {
+  if (!confirm('Delete this agent?')) return;
+  await fetch(`/api/dispatches/${id}`, { method: 'DELETE', headers: headers() });
+  setStatus('deleted');
+  await refreshAll();
+}
+
+async function runDispatchNow(id) {
+  const cron = allDispatches.find(c => c.id === id);
+  if (!cron) return;
+  const res = await fetch('/api/jobs', {
+    method: 'POST', headers: headers(),
+    body: JSON.stringify({ agent: cron.agent, messages: [{ role: 'user', content: cron.prompt }], dispatch_id: id }),
+  });
+  if (!res.ok) { setStatus('error'); return; }
+  const { job_id, session_id } = await res.json();
+  if (session_id) { queuedSessions.add(session_id); await loadSessions(); openRunDrawer(session_id); }
+  startPolling(job_id);
+  startElapsed();
+  setStatus('running…');
+}
+
+// ── Job polling ──
+function stopPolling() {
+  clearInterval(pollTimer); pollTimer = null;
+  stopElapsed();
+  if (runningSessionId) queuedSessions.delete(runningSessionId);
+  activeJobId = null; runningSessionId = null;
+  const next = pendingJobId; pendingJobId = null; pendingSessionId = null;
+  if (next) startPolling(next);
+}
+
+function startPolling(job_id) {
+  if (activeJobId === job_id) return;
+  if (activeJobId) { pendingJobId = job_id; return; }
+  activeJobId = job_id;
+  if (!elapsedTimer) startElapsed();
+  let shownSessionId = null;
+
+  pollTimer = setInterval(async () => {
+    try {
+      const r = await fetch(`/api/jobs/${job_id}`, { headers: headers() });
+      if (!r.ok) return;
+      const job = await r.json();
+      if (job.session_id && job.session_id !== shownSessionId) {
+        shownSessionId = job.session_id;
+        runningSessionId = job.session_id;
+        await loadSessions();
+        if (!runDrawerSessionId) openRunDrawer(job.session_id);
+      }
+      if (runDrawerSessionId === job.session_id) {
+        const sr = await fetch(`/api/sessions/${job.session_id}`, { headers: headers() });
+        if (sr.ok) renderRunDrawer(await sr.json());
+      }
+      if (job.status === 'queued') {
+        const pos = job.queue_position ? ` (#${job.queue_position})` : '';
+        setStatus(`queued${pos}…`);
+      }
+      if (job.status === 'running' && job.session_id && queuedSessions.has(job.session_id)) {
+        queuedSessions.delete(job.session_id); await loadSessions();
+      }
+      if (job.status !== 'running' && job.status !== 'queued') {
+        stopPolling();
+        setStatus(job.status === 'done' ? 'done ✓' : job.status);
+        await loadSessions();
+        await loadDigest();
+        if (dispatchTab === 'digest' || mobileTab === 'digest') renderDispatch();
+      }
+    } catch {}
+  }, 2000);
+}
+
+function startElapsed() {
+  elapsedSecs = 0;
+  elapsedTimer = setInterval(() => {
+    elapsedSecs++;
+    const el = document.getElementById('rd-elapsed');
+    if (el) el.textContent = `${elapsedSecs}s`;
+  }, 1000);
+}
+
+function stopElapsed() { clearInterval(elapsedTimer); elapsedTimer = null; }
+
+async function cancelJob() {
+  if (!activeJobId) return;
+  const jid = activeJobId;
+  await fetch(`/api/jobs/${jid}`, { method: 'DELETE', headers: headers() });
+  stopPolling();
+  setStatus('cancelled');
+  await loadSessions();
+}
+
+// ── Agent Library ──
+let allAgents = [];
+
+
+async function loadAgents() {
+  try {
+    const r = await fetch('/api/agents', { headers: headers() });
+    if (!r.ok) return;
+    allAgents = await r.json();
+    renderSidebar();
+  } catch {}
+}
+
+function renderAgentLibrary() {
+  const el = document.getElementById('content');
+  const editIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16v4z"/><line x1="14" y1="6" x2="18" y2="10"/></svg>`;
+  const exportIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+  const trashIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 20 7"/><path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>`;
+  const calendarIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 13 16 15"/></svg>`;
+
+  if (!allAgents.length) {
+    el.innerHTML = `<div style="padding:60px 24px;text-align:center"><div style="font-size:13px;color:var(--fg-3)">No agents yet — use <strong>New agent</strong> in the toolbar to create one.</div></div>`;
+    return;
+  }
+
+  const rows = allAgents.map(a => {
+    const sources = (() => { try { return JSON.parse(a.sources || '[]'); } catch { return []; } })();
+    const subs = (() => { try { return JSON.parse(a.sub_queries || '[]'); } catch { return []; } })();
+    const canEdit = true;
+    const canDelete = !a.is_builtin;
+    const actions = [
+      `<button class="btn btn-sm" title="Add schedule" onclick="event.stopPropagation();openAgentSheet({agent:'${esc(a.name)}'})">${calendarIcon} Schedule</button>`,
+      canEdit ? `<button class="btn btn-sm" title="Edit" onclick="event.stopPropagation();openAgentConfigSheet('${esc(a.name)}')">${editIcon} Edit</button>` : '',
+      `<button class="btn btn-sm" title="Export YAML" onclick="event.stopPropagation();exportAgentConfig('${esc(a.name)}')">${exportIcon}</button>`,
+      canDelete ? `<button class="btn btn-ghost btn-sm btn-danger" title="Delete" onclick="event.stopPropagation();deleteAgentConfig('${esc(a.name)}')">${trashIcon}</button>` : '',
+    ].filter(Boolean).join('');
+    const enabledDot = a.enabled
+      ? `<span style="width:7px;height:7px;border-radius:50%;background:var(--success,#22c55e);display:inline-block"></span>`
+      : `<span style="width:7px;height:7px;border-radius:50%;background:var(--fg-4);display:inline-block"></span>`;
+    return `<tr onclick="${canEdit ? `openAgentConfigSheet('${esc(a.name)}')` : ''}">
+      <td>${enabledDot} <span style="font-weight:500;font-family:var(--font-mono);font-size:12px">${esc(a.name)}</span></td>
+      <td>${esc(a.label || '')}</td>
+      <td style="color:var(--fg-3);font-size:12px">${esc((a.description || '').slice(0, 60))}</td>
+      <td style="text-align:right"><span class="meta-mono">${sources.length}</span></td>
+      <td style="text-align:right"><span class="meta-mono">${subs.length || '—'}</span></td>
+      <td><div style="display:inline-flex;gap:4px" onclick="event.stopPropagation()">${actions}</div></td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `<div style="padding:16px 24px 80px">
+    <div style="margin-bottom:14px;display:flex;align-items:center;gap:8px">
+      <span style="font-size:13px;color:var(--fg-3)">${allAgents.length} agents</span>
+      <label class="btn btn-ghost btn-sm" title="Import YAML" style="cursor:pointer;margin-left:auto">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Import YAML
+        <input type="file" accept=".yaml,.yml" style="display:none" onchange="importAgentYAML(this)">
+      </label>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden">
+      <table class="agents-table">
+        <thead><tr style="background:var(--panel-2)">
+          <th>Name</th><th>Label</th><th>Description</th>
+          <th style="text-align:right">Sources</th><th style="text-align:right">Tracks</th><th style="text-align:right">Actions</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+async function exportAgentConfig(name) {
+  const url = `/api/agents/${encodeURIComponent(name)}/export`;
+  const r = await fetch(url, { headers: headers() });
+  if (!r.ok) { setStatus('export failed'); return; }
+  const blob = await r.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${name}.yaml`;
+  a.click();
+}
+
+async function importAgentYAML(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const text = await file.text();
+  const r = await fetch('/api/agents/import', {
+    method: 'POST',
+    headers: { ...headers(), 'Content-Type': 'text/yaml' },
+    body: text,
+  });
+  if (!r.ok) { setStatus('import failed'); return; }
+  const d = await r.json();
+  setStatus(`${d.action}: ${d.name}`);
+  await loadAgents();
+  renderContent();
+  input.value = '';
+}
+
+async function deleteAgentConfig(name) {
+  if (!confirm(`Delete agent "${name}"? This cannot be undone.`)) return;
+  const r = await fetch(`/api/agents/${encodeURIComponent(name)}`, { method: 'DELETE', headers: headers() });
+  if (!r.ok) { setStatus('delete failed'); return; }
+  setStatus('deleted');
+  await loadAgents();
+  renderContent();
+}
+
+// ── Agent Config Sheet ──
+let _editingAgentName = null;
+
+function closeAgentConfigSheet() {
+  document.getElementById('agent-config-sheet').classList.remove('open');
+  _editingAgentName = null;
+}
+
+async function openAgentConfigSheet(name) {
+  _editingAgentName = name;
+  const sheet = document.getElementById('agent-config-sheet');
+  document.getElementById('cfg-sheet-title').textContent = name ? `Edit: ${name}` : 'New agent';
+  document.getElementById('cfg-sheet-body').innerHTML =
+    `<div style="padding:24px;color:var(--fg-3);font-size:13px">${name ? 'Loading…' : ''}</div>`;
+  document.getElementById('cfg-sheet-ftr').innerHTML = '';
+  sheet.classList.add('open');
+
+  let agent = null;
+  if (name) {
+    try {
+      const r = await fetch(`/api/agents/${encodeURIComponent(name)}`, { headers: headers() });
+      if (r.ok) agent = await r.json();
+      else { document.getElementById('cfg-sheet-body').innerHTML = `<div style="padding:24px;color:var(--error,#f87171);font-size:13px">Failed to load agent (${r.status})</div>`; return; }
+    } catch (e) {
+      document.getElementById('cfg-sheet-body').innerHTML = `<div style="padding:24px;color:var(--error,#f87171);font-size:13px">Network error loading agent</div>`; return;
+    }
+  }
+
+  const decode = (s, fallback = []) => { try { return JSON.parse(s || '[]'); } catch { return fallback; } };
+  const sources = decode(agent?.sources).join('\n');
+  const directSources = decode(agent?.direct_sources).join('\n');
+  const subQueries = (() => { try { return agent?.sub_queries ? JSON.stringify(JSON.parse(agent.sub_queries), null, 2) : ''; } catch { return ''; } })();
+  const f = (id, label, el, hint = '') =>
+    `<div><label style="display:block;font-size:12px;font-weight:500;color:var(--fg-2);margin-bottom:5px">${label}</label>${el}${hint ? `<div style="font-size:11px;color:var(--fg-3);margin-top:4px">${hint}</div>` : ''}</div>`;
+  const inp = (id, val, type='text', ph='') =>
+    `<input id="${id}" type="${type}" value="${esc(val ?? '')}" placeholder="${esc(ph)}" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 10px;color:var(--fg);font-size:13px;font-family:inherit">`;
+  const ta = (id, val, rows=3, ph='', mono=false) =>
+    `<textarea id="${id}" rows="${rows}" placeholder="${esc(ph)}" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 10px;color:var(--fg);font-size:13px;font-family:${mono?'var(--font-mono)':'inherit'};resize:vertical">${esc(val ?? '')}</textarea>`;
+  const sel = (id, val, opts) =>
+    `<select id="${id}" style="background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 10px;color:var(--fg);font-size:13px;font-family:inherit">${opts.map(([v,l])=>`<option value="${v}"${v==val?' selected':''}>${l}</option>`).join('')}</select>`;
+
+  const isBuiltin = agent?.is_builtin;
+  const isDirectFetch = decode(agent?.direct_sources).length > 0;
+  const nameInputStyle = `width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 10px;color:var(--fg);font-size:13px;font-family:var(--font-mono)${name?';opacity:0.55':''}`;
+
+  const subQueryTemplate = JSON.stringify([{label:'track1',goal:'Find {query}',sources:['example.com'],query_count:3}], null, 2);
+
+  const colorHues = [8,25,50,90,130,175,200,220,260,280,320,340];
+  const initHue = agent?.color ?? Math.floor(Math.random() * 360);
+  const colorSwatches = colorHues.map(h => {
+    const bg = isDark ? `oklch(0.32 0.07 ${h})` : `oklch(0.93 0.04 ${h})`;
+    const bd = isDark ? `oklch(0.42 0.08 ${h})` : `oklch(0.85 0.05 ${h})`;
+    return `<button type="button" onclick="document.getElementById('cfg-color').value=${h};document.querySelectorAll('.color-swatch').forEach(b=>b.style.outline='none');this.style.outline='2px solid var(--fg)'" class="color-swatch" style="width:20px;height:20px;border-radius:50%;border:1px solid ${bd};background:${bg};cursor:pointer;outline:${Math.abs(initHue-h)<6?'2px solid var(--fg)':'none'};padding:0"></button>`;
+  }).join('');
+
+  const typeToggleStyle = (active) =>
+    `display:flex;flex-direction:column;gap:4px;padding:10px 14px;border-radius:8px;cursor:pointer;border:1px solid ${active?'var(--accent,#6366f1)':'var(--line)'};background:${active?'color-mix(in srgb,var(--accent,#6366f1) 10%,var(--bg))':'var(--bg)'}`;
+
+  document.getElementById('cfg-sheet-body').innerHTML = `
+    ${f('cfg-name', 'Name *', `<input id="cfg-name" type="text" value="${esc(agent?.name ?? '')}" placeholder="my-agent" ${name?'readonly':''} style="${nameInputStyle}">`)}
+    ${f('cfg-label', 'Label', inp('cfg-label', agent?.label))}
+    ${f('cfg-desc', 'Description', inp('cfg-desc', agent?.description))}
+    <div><label style="display:block;font-size:12px;font-weight:500;color:var(--fg-2);margin-bottom:8px">Color</label><input type="hidden" id="cfg-color" value="${initHue}"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${colorSwatches}</div></div>
+    <hr style="border:none;border-top:1px solid var(--line)">
+    <div>
+      <div style="font-size:12px;font-weight:500;color:var(--fg-2);margin-bottom:8px">Agent type</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <label id="cfg-type-search-lbl" style="${typeToggleStyle(!isDirectFetch)}">
+          <input type="radio" name="cfg-type" id="cfg-type-search" value="search" ${!isDirectFetch?'checked':''} style="display:none">
+          <span style="font-size:13px;font-weight:600;color:var(--fg)">Web Search</span>
+          <span style="font-size:11px;color:var(--fg-3)">Generates queries to find content across the web</span>
+        </label>
+        <label id="cfg-type-fetch-lbl" style="${typeToggleStyle(isDirectFetch)}">
+          <input type="radio" name="cfg-type" id="cfg-type-fetch" value="fetch" ${isDirectFetch?'checked':''} style="display:none">
+          <span style="font-size:13px;font-weight:600;color:var(--fg)">Direct Fetch</span>
+          <span style="font-size:11px;color:var(--fg-3)">Fetches specific URLs you provide directly</span>
+        </label>
+      </div>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--line)">
+    ${f('cfg-goal', 'Goal template *', ta('cfg-goal', agent?.goal_template, 3, 'What should this agent find?'), '<code style="font-size:11px">{query}</code> — replaced by user input &nbsp;·&nbsp; <code style="font-size:11px">{today}</code> — current date YYYY-MM-DD')}
+    ${f('cfg-output', 'Output template', ta('cfg-output', agent?.output_template, 3, 'How should the synthesizer format its response?'))}
+    <hr style="border:none;border-top:1px solid var(--line)">
+
+    <div id="cfg-search-section" style="display:${isDirectFetch?'none':'flex'};flex-direction:column;gap:18px">
+      ${f('cfg-sources', 'Preferred domains', ta('cfg-sources', sources, 4, 'One domain per line e.g. sfchronicle.com', false), 'Focus searches on these sites — leave empty to search the whole web')}
+      <hr style="border:none;border-top:1px solid var(--line)">
+      <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px">
+        <input type="checkbox" id="cfg-validate" ${agent?.validate_links?'checked':''} style="margin-top:2px">
+        <span><span style="font-weight:500">Validate links</span> — Test each link before using it — filters out broken or dead URLs</span>
+      </label>
+      <div>
+        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="cfg-fetch" ${agent?.fetch_content?'checked':''} style="margin-top:2px">
+          <span><span style="font-weight:500">Fetch content</span> — Visit the top results and read the full page — richer answers, slower</span>
+        </label>
+        <div id="cfg-fetch-warning" style="font-size:11px;color:#f59e0b;margin-top:5px;margin-left:24px;display:none">Has no effect in multi-track mode — set fetch content per track instead</div>
+      </div>
+      ${f('cfg-fresh', 'Freshness', sel('cfg-fresh', agent?.freshness ?? '', [['','Any date'],['d','Last 24 h'],['w','Last 7 days'],['m','Last 30 days'],['y','Last year']]))}
+      <hr style="border:none;border-top:1px solid var(--line)">
+      <details${subQueries ? ' open' : ''}>
+        <summary style="font-size:12px;font-weight:600;color:var(--fg-2);cursor:pointer;padding:6px 0;user-select:none;list-style:none;display:flex;align-items:center;gap:6px">
+          <svg width="10" height="10" viewBox="0 0 10 10" style="transition:transform .15s" class="adv-chevron"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Advanced
+        </summary>
+        <div style="margin-top:14px;display:flex;flex-direction:column;gap:18px">
+          ${f('cfg-pqc', 'Planner queries', inp('cfg-pqc', agent?.planner_query_count ?? 5, 'number'), 'Number of search queries the planner generates — higher values find more but run slower')}
+          ${f('cfg-mvl', 'Validator loops', inp('cfg-mvl', agent?.max_validator_loops ?? 1, 'number'), 'Retry search if results are insufficient — 1 is usually enough; 0 disables retries')}
+          <details${subQueries ? ' open' : ''}>
+            <summary style="font-size:12px;font-weight:500;color:var(--fg-2);cursor:pointer;padding:4px 0;user-select:none">Multi-track <span style="font-weight:400;color:var(--fg-3)">(sub-queries)</span></summary>
+            <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">
+              <div style="font-size:11px;color:var(--fg-3)">Each track runs an independent search pipeline. Useful when the agent covers distinct topics that benefit from isolated queries and sources. Fetch content and freshness are set per-track.</div>
+              <button type="button" class="btn btn-ghost btn-sm" style="align-self:flex-start" onclick="document.getElementById('cfg-sub').value=${JSON.stringify(subQueryTemplate)}">Insert template</button>
+              ${ta('cfg-sub', subQueries, 7, '[]', true)}
+              <div style="font-size:11px;color:var(--fg-3)">JSON array of <code>{label, goal, sources[], query_count, freshness}</code></div>
+            </div>
+          </details>
+        </div>
+      </details>
+    </div>
+
+    <div id="cfg-fetch-section" style="display:${isDirectFetch?'flex':'none'};flex-direction:column;gap:18px">
+      ${f('cfg-direct', 'Source URLs', ta('cfg-direct', directSources, 5, 'https://example.com/feed?date={today}', true), 'One URL per line — <code style="font-size:11px">{today}</code> is replaced with the current date (YYYY-MM-DD)')}
+      <hr style="border:none;border-top:1px solid var(--line)">
+      <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px">
+        <input type="checkbox" id="cfg-validate-fetch" ${agent?.validate_links?'checked':''} style="margin-top:2px">
+        <span><span style="font-weight:500">Validate links</span> — Test each link before using it — filters out broken or dead URLs</span>
+      </label>
+    </div>
+  `;
+
+  // wire up type toggle and sub-query warning
+  document.querySelectorAll('input[name="cfg-type"]').forEach(r => r.addEventListener('change', updateCfgTypeVisibility));
+  document.getElementById('cfg-sub')?.addEventListener('input', updateCfgSubWarning);
+  document.getElementById('cfg-name')?.addEventListener('input', function() {
+    const pos = this.selectionStart;
+    const before = this.value.slice(0, pos);
+    this.value = this.value.toLowerCase()
+      .replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-{2,}/g, '-');
+    const after = before.toLowerCase()
+      .replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-{2,}/g, '-');
+    this.setSelectionRange(after.length, after.length);
+  });
+  updateCfgSubWarning();
+
+  const deleteBtn = (name && !isBuiltin)
+    ? `<button class="btn btn-ghost btn-sm btn-danger" onclick="deleteAgentConfig('${esc(name)}').then(closeAgentConfigSheet)" style="margin-right:auto">Delete</button>`
+    : '';
+  const exportBtn = name
+    ? `<button class="btn btn-ghost btn-sm" onclick="exportAgentConfig('${esc(name)}')">Export YAML</button>`
+    : '';
+
+  document.getElementById('cfg-sheet-ftr').innerHTML = `
+    ${deleteBtn}
+    ${exportBtn}
+    <button class="btn btn-sm" style="margin-left:${deleteBtn||exportBtn?'0':'auto'}" onclick="closeAgentConfigSheet()">Cancel</button>
+    <button class="btn btn-primary btn-sm" onclick="saveAgentConfig()">Save</button>
+  `;
+}
+
+
+function updateCfgTypeVisibility() {
+  const isDirect = document.getElementById('cfg-type-fetch')?.checked;
+  const searchSec = document.getElementById('cfg-search-section');
+  const fetchSec = document.getElementById('cfg-fetch-section');
+  const searchLbl = document.getElementById('cfg-type-search-lbl');
+  const fetchLbl = document.getElementById('cfg-type-fetch-lbl');
+  if (searchSec) searchSec.style.display = isDirect ? 'none' : 'flex';
+  if (fetchSec) fetchSec.style.display = isDirect ? 'flex' : 'none';
+  const activeStyle = 'color-mix(in srgb,var(--accent,#6366f1) 10%,var(--bg))';
+  const inactiveStyle = 'var(--bg)';
+  const activeBorder = 'var(--accent,#6366f1)';
+  const inactiveBorder = 'var(--line)';
+  if (searchLbl) { searchLbl.style.background = isDirect ? inactiveStyle : activeStyle; searchLbl.style.borderColor = isDirect ? inactiveBorder : activeBorder; }
+  if (fetchLbl)  { fetchLbl.style.background  = isDirect ? activeStyle : inactiveStyle; fetchLbl.style.borderColor  = isDirect ? activeBorder : inactiveBorder; }
+}
+
+function updateCfgSubWarning() {
+  const hasSubQueries = (() => {
+    try { const v = JSON.parse(document.getElementById('cfg-sub')?.value || '[]'); return Array.isArray(v) && v.length > 0; } catch { return false; }
+  })();
+  const warning = document.getElementById('cfg-fetch-warning');
+  if (warning) warning.style.display = hasSubQueries ? 'block' : 'none';
+}
+
+async function saveAgentConfig() {
+  const raw = document.getElementById('cfg-name').value.trim()
+    .toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  document.getElementById('cfg-name').value = raw;
+  const name = raw;
+  if (!name) { setStatus('name is required'); return; }
+
+  const parseSources = raw => raw.split('\n').map(s => s.trim()).filter(Boolean);
+  const parseInt2 = (id, fallback) => { const v = parseInt(document.getElementById(id)?.value); return isNaN(v) ? fallback : v; };
+  const parseSubQueries = () => {
+    const raw = document.getElementById('cfg-sub')?.value?.trim();
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { setStatus('invalid sub-queries JSON'); return undefined; }
+  };
+
+  const subs = parseSubQueries();
+  if (subs === undefined) return; // JSON parse error
+
+  const isDirect = document.getElementById('cfg-type-fetch')?.checked;
+
+  const body = {
+    name,
+    label: document.getElementById('cfg-label').value.trim(),
+    description: document.getElementById('cfg-desc').value.trim(),
+    goal_template: document.getElementById('cfg-goal').value.trim(),
+    output_template: document.getElementById('cfg-output').value.trim(),
+    sources: isDirect ? [] : parseSources(document.getElementById('cfg-sources')?.value ?? ''),
+    direct_sources: isDirect ? parseSources(document.getElementById('cfg-direct')?.value ?? '') : [],
+    tool_bindings: isDirect ? ['web_fetch'] : [],
+    planner_query_count: isDirect ? 4 : parseInt2('cfg-pqc', 5),
+    max_validator_loops: isDirect ? 1 : parseInt2('cfg-mvl', 1),
+    freshness: isDirect ? null : (document.getElementById('cfg-fresh')?.value || null),
+    validate_links: isDirect
+      ? (document.getElementById('cfg-validate-fetch')?.checked ?? false)
+      : (document.getElementById('cfg-validate')?.checked ?? false),
+    fetch_content: isDirect ? false : (document.getElementById('cfg-fetch')?.checked ?? false),
+    sub_queries: isDirect ? null : subs,
+    color: parseInt(document.getElementById('cfg-color')?.value) || null,
+  };
+
+  const isEdit = !!_editingAgentName;
+  const url = isEdit ? `/api/agents/${encodeURIComponent(_editingAgentName)}` : '/api/agents';
+  const r = await fetch(url, {
+    method: isEdit ? 'PUT' : 'POST',
+    headers: { ...headers(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    setStatus(`error: ${err.detail || r.status}`);
+    return;
+  }
+  setStatus(isEdit ? 'saved' : 'created');
+  closeAgentConfigSheet();
+  await loadAgents();
+  renderContent();
+}
+
+// ── Settings Sheet ──
+
+function openSettingsSheet() {
+  document.getElementById('settings-sheet').classList.add('open');
+  loadSettings();
+}
+
+function closeSettingsSheet() {
+  document.getElementById('settings-sheet').classList.remove('open');
+}
+
+async function loadSettings() {
+  const body = document.getElementById('settings-sheet-body');
+  const ftr  = document.getElementById('settings-sheet-ftr');
+  body.innerHTML = '<div style="padding:24px;color:var(--fg-3);font-size:13px">Loading…</div>';
+  ftr.innerHTML  = '';
+
+  let settings = {};
+  try {
+    const r = await fetch('/api/settings', { headers: headers() });
+    if (r.ok) settings = await r.json();
+  } catch (_) {}
+
+  const val = (key) => settings[key]?.value ?? '';
+
+  const f = (id, label, el, hint = '') =>
+    `<div><label style="display:block;font-size:12px;font-weight:500;color:var(--fg-2);margin-bottom:5px">${label}</label>${el}${hint ? `<div style="font-size:11px;color:var(--fg-3);margin-top:4px">${hint}</div>` : ''}</div>`;
+  const inp = (id, v, type = 'text', ph = '') =>
+    `<input id="${id}" type="${type}" value="${esc(v)}" placeholder="${esc(ph)}" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 10px;color:var(--fg);font-size:13px;font-family:inherit">`;
+  const sel = (id, v, opts) =>
+    `<select id="${id}" onchange="updateSettingsProviderFields()" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 10px;color:var(--fg);font-size:13px;font-family:inherit">${opts.map(([ov,ol]) => `<option value="${ov}"${ov===v?' selected':''}>${ol}</option>`).join('')}</select>`;
+
+  const provider = val('PROVIDER') || 'ollama';
+  const isCloud = ['openai','anthropic','fireworks'].includes(provider);
+  const isOllama = provider === 'ollama';
+  const apiKeyVar = provider === 'openai' ? 'OPENAI_API_KEY' : provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'FIREWORKS_API_KEY';
+
+  body.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">LLM Provider</div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          ${f('s-provider', 'Provider', sel('s-provider', provider, [['ollama','Ollama (local)'],['openai','OpenAI'],['anthropic','Anthropic'],['fireworks','Fireworks']]))}
+          ${f('s-model', 'Model', inp('s-model', val('MODEL'), 'text', 'e.g. qwen3, gpt-4o, claude-sonnet-4-5'))}
+          <div id="s-apikey-row" style="display:${isCloud?'block':'none'}">
+            ${f('s-apikey', 'API key', inp('s-apikey', val(apiKeyVar), 'password', 'sk-...'))}
+          </div>
+          <div id="s-baseurl-row" style="display:${isOllama?'block':'none'}">
+            ${f('s-baseurl', 'Base URL', inp('s-baseurl', val('OLLAMA_BASE_URL'), 'text', 'http://localhost:11434'))}
+          </div>
+          ${f('s-fastmodel', 'Fast model', inp('s-fastmodel', val('FAST_MODEL'), 'text', 'optional — smaller model for quick tasks'))}
+        </div>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--line)">
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Search</div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          ${f('s-brave', 'Brave Search API key', inp('s-brave', val('BRAVE_API_KEY'), 'password'))}
+          ${f('s-jina', 'Jina API key', inp('s-jina', val('JINA_API_KEY'), 'password'))}
+        </div>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--line)">
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Personalization</div>
+        ${f('s-location', 'Location', inp('s-location', val('LOCATION'), 'text', 'e.g. San Francisco, CA'), 'Used to localize search results and agent context')}
+      </div>
+      <hr style="border:none;border-top:1px solid var(--line)">
+      <details>
+        <summary style="font-size:12px;font-weight:600;color:var(--fg-2);cursor:pointer;padding:6px 0;user-select:none;list-style:none;display:flex;align-items:center;gap:6px">
+          <svg width="10" height="10" viewBox="0 0 10 10" style="transition:transform .15s" class="adv-chevron"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Advanced
+        </summary>
+        <div style="margin-top:14px;display:flex;flex-direction:column;gap:12px">
+          ${f('s-budget', 'Context budget', `<select id="s-budget" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 10px;color:var(--fg);font-size:13px"><option value="cloud"${val('CONTEXT_BUDGET')==='cloud'||!val('CONTEXT_BUDGET')?' selected':''}>cloud — large context (128k+)</option><option value="local"${val('CONTEXT_BUDGET')==='local'?' selected':''}>local — medium context (32k)</option><option value="minimal"${val('CONTEXT_BUDGET')==='minimal'?' selected':''}>minimal — small context (8k)</option></select>`)}
+          ${f('s-temp', 'Temperature', inp('s-temp', val('TEMPERATURE') || '0.2', 'number', '0.2'), '0 = deterministic, 1 = creative')}
+          ${f('s-timeout', 'LLM timeout (seconds)', inp('s-timeout', val('TIMEOUT') || '300', 'number', '300'))}
+        </div>
+      </details>
+    </div>
+  `;
+
+  ftr.innerHTML = `<button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="saveSettings()">Save</button>`;
+}
+
+function updateSettingsProviderFields() {
+  const provider = document.getElementById('s-provider')?.value ?? 'ollama';
+  const isCloud = ['openai','anthropic','fireworks'].includes(provider);
+  const isOllama = provider === 'ollama';
+  const apikeyRow = document.getElementById('s-apikey-row');
+  const baseurlRow = document.getElementById('s-baseurl-row');
+  if (apikeyRow) apikeyRow.style.display = isCloud ? 'block' : 'none';
+  if (baseurlRow) baseurlRow.style.display = isOllama ? 'block' : 'none';
+  // Update the API key label placeholder to reflect provider
+  const apikeyInput = document.getElementById('s-apikey');
+  if (apikeyInput) {
+    const ph = provider === 'openai' ? 'sk-...' : provider === 'anthropic' ? 'sk-ant-...' : 'fw-...';
+    apikeyInput.placeholder = ph;
+  }
+}
+
+async function saveSettings() {
+  const provider = document.getElementById('s-provider')?.value ?? '';
+  const isCloud = ['openai','anthropic','fireworks'].includes(provider);
+  const apiKeyVar = provider === 'openai' ? 'OPENAI_API_KEY' : provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'FIREWORKS_API_KEY';
+
+  const body = {
+    PROVIDER: provider,
+    MODEL: document.getElementById('s-model')?.value?.trim() ?? '',
+    FAST_MODEL: document.getElementById('s-fastmodel')?.value?.trim() ?? '',
+    OLLAMA_BASE_URL: document.getElementById('s-baseurl')?.value?.trim() ?? '',
+    BRAVE_API_KEY: document.getElementById('s-brave')?.value?.trim() ?? '',
+    JINA_API_KEY: document.getElementById('s-jina')?.value?.trim() ?? '',
+    LOCATION: document.getElementById('s-location')?.value?.trim() ?? '',
+    CONTEXT_BUDGET: document.getElementById('s-budget')?.value ?? 'cloud',
+    TEMPERATURE: document.getElementById('s-temp')?.value?.trim() ?? '0.2',
+    TIMEOUT: document.getElementById('s-timeout')?.value?.trim() ?? '300',
+  };
+  if (isCloud) {
+    const keyVal = document.getElementById('s-apikey')?.value?.trim() ?? '';
+    if (keyVal) body[apiKeyVar] = keyVal;
+  }
+
+  const ftr = document.getElementById('settings-sheet-ftr');
+  ftr.innerHTML = '<span style="font-size:12px;color:var(--fg-3)">Saving…</span>';
+
+  const r = await fetch('/api/settings', {
+    method: 'POST',
+    headers: { ...headers(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    ftr.innerHTML = `<span style="font-size:12px;color:var(--error,#f87171)">Error: ${esc(err.detail || String(r.status))}</span><button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="saveSettings()">Retry</button>`;
+    return;
+  }
+
+  ftr.innerHTML = `
+    <span style="font-size:12px;color:#f59e0b">⚠ Restart server to apply changes</span>
+    <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="saveSettings()">Save</button>
+  `;
+}
+
+// ── Init ──
+(function init() {
+  const saved = localStorage.getItem('dispatch-theme');
+  isDark = saved !== 'light';
+  if (!isDark) document.body.classList.add('theme-light');
+  updateThemeBtn();
+
+  refreshAll().then(() => {
+    if (window.innerWidth <= 640) setMobileTab('digest');
+  });
+
+  refreshTimer = setInterval(() => { loadSessions(); loadDispatches(); loadDigest(); }, 30000);
+})();
+
+</script>
+</body>
+</html>

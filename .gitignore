@@ -1,0 +1,23 @@
+# virtual environment
+local-web-search
+.venv
+deploy/
+Makefile
+.claude
+
+# secrets and config
+.env
+
+# database
+search_history.db
+search_history.db-wal
+search_history.db-shm
+test.db
+test.db-shm
+test.db-wal
+# macos
+.DS_Store
+
+# python
+__pycache__/
+*.pyc

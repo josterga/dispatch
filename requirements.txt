@@ -1,0 +1,10 @@
+ollama
+openai
+anthropic
+requests
+python-dotenv
+fastapi
+uvicorn[standard]
+apscheduler
+ddgs
+pyyaml
