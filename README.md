@@ -4,7 +4,7 @@
 
 Self-hosted AI research agent platform. Define agents for topics you care about, schedule them as dispatches, and get synthesized digests — no manual searching. Runs on your machine or server. Bring your own LLM (Ollama, OpenAI, Anthropic, Fireworks).
 
-<!-- Add a screenshot here: docs/screenshot.png -->
+![Read Digest](screenshots/read_digest.png)
 
 ## What you get
 
@@ -72,6 +72,8 @@ Optional phases (enabled per-agent via config):
 ## Adding a new agent
 
 **Option 1 — Web UI**
+
+<img alt="Configure Agent" src=screenshots/configure_agent.png width="300">
 
 Library tab → **New agent** → fill in name, goal, sources, and color → Save. The agent immediately appears in the Library and can be scheduled.
 
@@ -298,6 +300,9 @@ Tool bindings are inferred automatically from the type and don't need to be set 
 3. Click **Schedule** on the new row — the dispatch sheet opens with the agent pre-selected
 4. Enter the prompt the agent will run with (e.g. "SF local news digest"), set frequency and time, save
 5. The agent appears in **Active** and will run on schedule
+
+
+<img alt="Schedule Dispatch" src=screenshots/schedule_dispatch.png width="300">
 
 ### Editing agents
 
