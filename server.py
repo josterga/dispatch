@@ -123,7 +123,7 @@ def _check_auth(request: Request) -> None:
 _SETTINGS_KEYS = [
     "PROVIDER", "MODEL", "FAST_MODEL", "OLLAMA_BASE_URL",
     "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "FIREWORKS_API_KEY",
-    "BRAVE_API_KEY", "JINA_API_KEY",
+    "OLLAMA_API_KEY", "BRAVE_API_KEY", "JINA_API_KEY",
     "LOCATION",
     "CONTEXT_BUDGET", "TEMPERATURE", "TIMEOUT",
 ]
@@ -545,6 +545,7 @@ async def save_settings_route(request: Request):
     updates = {k: str(v) for k, v in body.items() if k in _SETTINGS_KEYS}
     for key, value in updates.items():
         db.set_setting(key, value)
+        os.environ[key] = value
     _update_env_file(updates)
     return {"saved": True, "restart_required": True}
 

@@ -310,7 +310,7 @@ The gear icon (top-right) opens the Settings sheet. Changes are saved to `.env` 
 | Section | What you can configure |
 |---|---|
 | LLM Provider | Provider, model, API key, Ollama base URL, fast model |
-| Search | Brave and Jina API keys |
+| Search | Ollama Cloud, Brave, and Jina API keys |
 | Personalization | Location (used by local-aware agents) |
 | Advanced | Context budget, temperature, LLM timeout |
 

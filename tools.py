@@ -12,10 +12,8 @@ import db
 
 load_dotenv(override=True)
 
-OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY")
 SEARCH_RESULTS_PER_PROVIDER = int(os.getenv("OLLAMA_SEARCH_RESULTS_PER_PROVIDER", "5"))
 WEB_FETCH_PROVIDER = os.getenv("WEB_FETCH_PROVIDER", "http")  # "http" or "jina"
-JINA_API_KEY = os.getenv("JINA_API_KEY", "")
 
 TOOLS = [
     {
@@ -62,19 +60,6 @@ TOOLS = [
     },
 ]
 
-_headers = None
-
-
-def get_headers():
-    global _headers
-    if _headers is None:
-        _headers = {
-            "Authorization": f"Bearer {OLLAMA_API_KEY}",
-            "Content-Type": "application/json",
-        }
-    return _headers
-
-
 BRAVE_API_KEY = os.getenv("BRAVE_API_KEY", "")
 
 _ollama_failure_until: float = 0.0
@@ -85,7 +70,7 @@ def _ollama_search(query: str) -> tuple[Optional[list], Optional[str]]:
         r = requests.post(
             "https://ollama.com/api/web_search",
             json={"query": query, "max_results": SEARCH_RESULTS_PER_PROVIDER},
-            headers=get_headers(),
+            headers={"Authorization": f"Bearer {os.getenv('OLLAMA_API_KEY')}", "Content-Type": "application/json"},
             timeout=15,
         )
         r.raise_for_status()
@@ -116,7 +101,8 @@ _BRAVE_FRESHNESS = {"d": "pd", "w": "pw", "m": "pm", "y": "py"}
 
 
 def _brave_search(query: str, freshness: Optional[str] = None) -> tuple[Optional[list], Optional[str]]:
-    if not BRAVE_API_KEY:
+    brave_key = os.getenv("BRAVE_API_KEY", "")
+    if not brave_key:
         return None, None
     try:
         params: dict = {"q": query, "count": SEARCH_RESULTS_PER_PROVIDER}
@@ -125,7 +111,7 @@ def _brave_search(query: str, freshness: Optional[str] = None) -> tuple[Optional
         r = requests.get(
             "https://api.search.brave.com/res/v1/web/search",
             params=params,
-            headers={"Accept": "application/json", "X-Subscription-Token": BRAVE_API_KEY},
+            headers={"Accept": "application/json", "X-Subscription-Token": brave_key},
             timeout=10,
         )
         r.raise_for_status()
@@ -195,9 +181,10 @@ def _jina_fetch(url: str) -> dict:
     jina_url = f"https://r.jina.ai/{url}"
     print(f"[web_fetch]  Jina: {jina_url}")
     try:
+        jina_key = os.getenv("JINA_API_KEY", "")
         headers = {"User-Agent": "Mozilla/5.0 (compatible; local-web-search/1.0)", "Accept": "text/plain"}
-        if JINA_API_KEY:
-            headers["Authorization"] = f"Bearer {JINA_API_KEY}"
+        if jina_key:
+            headers["Authorization"] = f"Bearer {jina_key}"
         r = requests.get(
             jina_url,
             headers=headers,
@@ -214,14 +201,15 @@ def _jina_fetch(url: str) -> dict:
 
 
 def _jina_search(query: str, freshness: Optional[str] = None) -> tuple[Optional[list], Optional[str]]:
-    if not JINA_API_KEY or "site:" in query:
+    jina_key = os.getenv("JINA_API_KEY", "")
+    if not jina_key or "site:" in query:
         return None, None
     try:
         import urllib.parse
         url = f"https://s.jina.ai/{urllib.parse.quote_plus(query)}"
         r = requests.get(
             url,
-            headers={"Authorization": f"Bearer {JINA_API_KEY}", "Accept": "application/json"},
+            headers={"Authorization": f"Bearer {jina_key}", "Accept": "application/json"},
             timeout=15,
         )
         r.raise_for_status()

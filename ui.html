@@ -2315,6 +2315,7 @@ async function loadSettings() {
       <div>
         <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Search</div>
         <div style="display:flex;flex-direction:column;gap:12px">
+          ${f('s-ollama-search', 'Ollama Cloud API key', inp('s-ollama-search', val('OLLAMA_API_KEY'), 'password'))}
           ${f('s-brave', 'Brave Search API key', inp('s-brave', val('BRAVE_API_KEY'), 'password'))}
           ${f('s-jina', 'Jina API key', inp('s-jina', val('JINA_API_KEY'), 'password'))}
         </div>
@@ -2368,6 +2369,7 @@ async function saveSettings() {
     MODEL: document.getElementById('s-model')?.value?.trim() ?? '',
     FAST_MODEL: document.getElementById('s-fastmodel')?.value?.trim() ?? '',
     OLLAMA_BASE_URL: document.getElementById('s-baseurl')?.value?.trim() ?? '',
+    OLLAMA_API_KEY: document.getElementById('s-ollama-search')?.value?.trim() ?? '',
     BRAVE_API_KEY: document.getElementById('s-brave')?.value?.trim() ?? '',
     JINA_API_KEY: document.getElementById('s-jina')?.value?.trim() ?? '',
     LOCATION: document.getElementById('s-location')?.value?.trim() ?? '',
