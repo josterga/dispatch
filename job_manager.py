@@ -7,6 +7,7 @@ from queue import Queue
 from typing import Optional
 
 import db
+import notify
 from pipeline import MODEL, create_pipeline
 
 
@@ -191,6 +192,22 @@ class JobManager:
                         self.scheduler.remove_job(f"dispatch_{dispatch_id}")
                     except Exception:
                         pass
+                label = prompt[:60] + ("…" if len(prompt) > 60 else "")
+                if _status == "done" and _result:
+                    snippet = _result[:300].strip() + ("…" if len(_result) > 300 else "")
+                    notify.send(
+                        title=f"[{agent}] Run complete",
+                        body=f"{label}\n\n{snippet}",
+                        tags=["white_check_mark"],
+                        priority="default",
+                    )
+                elif _status == "error":
+                    notify.send(
+                        title=f"[{agent}] Run failed",
+                        body=f"{label}\n\nError: {_err or 'unknown'}",
+                        tags=["x"],
+                        priority="high",
+                    )
 
         self._queue.put((job_id, _run, ()))
 
