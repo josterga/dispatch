@@ -195,9 +195,7 @@ class JobManager:
                 label = prompt[:60] + ("…" if len(prompt) > 60 else "")
                 if _status == "done" and _result:
                     summary = notify.summarize(self.client, _result)
-                    notify.send(title=f"[{agent}] Run complete", body=f"{label}\n\n{summary}", tags=["white_check_mark"])
-                elif _status == "error":
-                    notify.send(title=f"[{agent}] Run failed", body=f"{label}\n\nError: {_err or 'unknown'}", tags=["x"], priority="high")
+                    notify.send(title=agent, body=summary)
 
         self._queue.put((job_id, _run, ()))
 
@@ -244,6 +242,4 @@ class JobManager:
                 label = prompt_[:60] + ("…" if len(prompt_) > 60 else "")
                 if _status == "done" and _result:
                     summary = notify.summarize(self.client, _result)
-                    notify.send(title=f"[{agent_name}] Run complete", body=f"{label}\n\n{summary}", tags=["white_check_mark"])
-                elif _status == "error":
-                    notify.send(title=f"[{agent_name}] Run failed", body=f"{label}\n\nError: {_err or 'unknown'}", tags=["x"], priority="high")
+                    notify.send(title=agent_name, body=summary)
