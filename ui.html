@@ -1304,10 +1304,41 @@ function renderMobileAgents() {
   const clockIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 13 16 15"/></svg>`;
   const playIcon = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="none"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor"/></svg>`;
   const editIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16v4z"/><line x1="14" y1="6" x2="18" y2="10"/></svg>`;
+  const calendarIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 13 16 15"/></svg>`;
 
   let mAgentsView = el.dataset.agentView || 'active';
-  const shown = mAgentsView === 'active' ? active : archived;
 
+  const seg = `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:3px;gap:2px;margin-bottom:12px">
+    <button class="seg-btn${mAgentsView==='active'?' active':''}" onclick="this.closest('#content').dataset.agentView='active';renderMobileAgents()">Active · ${active.length}</button>
+    <button class="seg-btn${mAgentsView==='archived'?' active':''}" onclick="this.closest('#content').dataset.agentView='archived';renderMobileAgents()">Archived · ${archived.length}</button>
+    <button class="seg-btn${mAgentsView==='library'?' active':''}" onclick="this.closest('#content').dataset.agentView='library';renderMobileAgents()">Library · ${allAgents.length}</button>
+  </div>`;
+
+  el.dataset.agentView = mAgentsView;
+
+  if (mAgentsView === 'library') {
+    const agentCards = allAgents.map(a => {
+      const desc = (a.description || '').slice(0, 100);
+      return `<div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;color:var(--fg)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:${desc ? 6 : 10}px">
+          ${pillHTML(a.name)}
+          ${a.label ? `<span style="font-size:13px;color:var(--fg-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.label)}</span>` : ''}
+        </div>
+        ${desc ? `<div style="font-size:13px;color:var(--fg-3);line-height:1.4;margin-bottom:10px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${esc(desc)}</div>` : ''}
+        <div style="display:flex;gap:4px;border-top:1px solid var(--line);padding-top:10px">
+          <button class="btn btn-sm" onclick="openAgentSheet({agent:'${esc(a.name)}'});event.stopPropagation()">${calendarIcon} Schedule</button>
+          <button class="btn btn-sm" style="margin-left:auto" onclick="openAgentConfigSheet('${esc(a.name)}');event.stopPropagation()">${editIcon} Edit</button>
+        </div>
+      </div>`;
+    }).join('');
+    el.innerHTML = `<div style="padding:10px 14px 24px">
+      ${seg}
+      <div style="display:flex;flex-direction:column;gap:8px">${agentCards || '<div style="text-align:center;padding:40px;color:var(--fg-3);font-size:13px">No agents in library</div>'}</div>
+    </div>`;
+    return;
+  }
+
+  const shown = mAgentsView === 'active' ? active : archived;
   const cards = shown.map(c => {
     const label = c.label || truncate(c.prompt, 50);
     const footer = mAgentsView === 'active'
@@ -1335,12 +1366,8 @@ function renderMobileAgents() {
     </div>`;
   }).join('');
 
-  el.dataset.agentView = mAgentsView;
   el.innerHTML = `<div style="padding:10px 14px 24px">
-    <div style="display:grid;grid-template-columns:1fr 1fr;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:3px;gap:2px;margin-bottom:12px">
-      <button class="seg-btn${mAgentsView==='active'?' active':''}" onclick="this.closest('#content').dataset.agentView='active';renderMobileAgents()">Active · ${active.length}</button>
-      <button class="seg-btn${mAgentsView==='archived'?' active':''}" onclick="this.closest('#content').dataset.agentView='archived';renderMobileAgents()">Archived · ${archived.length}</button>
-    </div>
+    ${seg}
     <div style="display:flex;flex-direction:column;gap:8px">${cards || '<div style="text-align:center;padding:40px;color:var(--fg-3);font-size:13px">No agents</div>'}</div>
   </div>`;
 }
