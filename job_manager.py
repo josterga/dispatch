@@ -249,3 +249,11 @@ class JobManager:
                 elif _err:
                     self._jobs[job_id]["error"] = _err
             db.end_session(session_id)
+            if getattr(body, "dispatch_id", None):
+                prompt_ = next((m.content for m in reversed(body.messages) if m.role == "user"), "")
+                label = prompt_[:60] + ("…" if len(prompt_) > 60 else "")
+                if _status == "done" and _result:
+                    snippet = _result[:300].strip() + ("…" if len(_result) > 300 else "")
+                    notify.send(title=f"[{agent_name}] Run complete", body=f"{label}\n\n{snippet}", tags=["white_check_mark"])
+                elif _status == "error":
+                    notify.send(title=f"[{agent_name}] Run failed", body=f"{label}\n\nError: {_err or 'unknown'}", tags=["x"], priority="high")
