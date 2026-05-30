@@ -18,6 +18,7 @@ import db
 from providers import LLMClient
 from pipeline import MODEL, OLLAMA_TIMEOUT
 from agent_loader import build_registry
+from agent_config import DomainConfig
 from job_manager import JobManager
 
 load_dotenv(override=True)
@@ -83,9 +84,13 @@ class ChatRequest(BaseModel):
     model: str = MODEL
     messages: list[Message]
     stream: bool = False
-    agent: str = "news"
+    agent: str = "general"
     think: bool = False
     dispatch_id: Optional[int] = None
+    goal_template: Optional[str] = None
+    output_template: Optional[str] = None
+    sources: Optional[list[str]] = None
+    freshness: Optional[str] = None
 
     @field_validator("messages", mode="before")
     @classmethod
@@ -155,6 +160,20 @@ def _update_env_file(updates: dict[str, str]) -> None:
     _ENV_PATH.write_text("".join(new_lines))
 
 
+def _resolve_config(body: ChatRequest) -> tuple[str, Optional[DomainConfig]]:
+    if body.goal_template:
+        config = DomainConfig(
+            agent_name="inline",
+            goal_template=body.goal_template,
+            output_template=body.output_template or "",
+            sources=body.sources or [],
+            freshness=body.freshness,
+        )
+        return "inline", config
+    agent_name = body.agent if body.agent in PIPELINE_CONFIGS else "general"
+    return agent_name, None
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/")
@@ -189,7 +208,7 @@ async def get_session(session_id: int, request: Request):
 @app.post("/api/jobs")
 async def submit_job(request: Request, body: ChatRequest):
     _check_auth(request)
-    agent_name = body.agent if body.agent in PIPELINE_CONFIGS else "news"
+    agent_name, inline_config = _resolve_config(body)
     cancel_event = threading.Event()
 
     # Create session immediately so it appears in the sidebar while queued.
@@ -199,7 +218,7 @@ async def submit_job(request: Request, body: ChatRequest):
             db.log_message(session_id, "user", m.content)
             break
 
-    job_id = _jobs.submit(body, cancel_event, session_id)
+    job_id = _jobs.submit(body, cancel_event, session_id, inline_config=inline_config)
     return {"job_id": job_id, "session_id": session_id}
 
 
@@ -507,8 +526,9 @@ async def delete_dispatch_route(dispatch_id: int, request: Request):
 async def chat_completions(request: Request, body: ChatRequest):
     """OpenAI-compatible endpoint — queued, blocks until job completes."""
     _check_auth(request)
+    _, inline_config = _resolve_config(body)
     cancel_event = threading.Event()
-    job = _jobs.submit_and_wait(body, cancel_event)
+    job = _jobs.submit_and_wait(body, cancel_event, inline_config=inline_config)
     answer = job.get("result") or "[reached max tool iterations without a final answer]"
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex}",

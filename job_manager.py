@@ -97,10 +97,12 @@ class JobManager:
 
     # ── Job submission ────────────────────────────────────────────────────────
 
-    def submit(self, body, cancel_event, session_id: int) -> str:
+    def submit(self, body, cancel_event, session_id: int, inline_config=None) -> str:
         """Queue an HTTP-originated job. session_id must be pre-created by the caller."""
         job_id = uuid.uuid4().hex
-        agent_name = body.agent if body.agent in self.pipeline_configs else "general"
+        agent_name = "inline" if inline_config else (
+            body.agent if body.agent in self.pipeline_configs else "general"
+        )
 
         with self._lock:
             self._jobs[job_id] = {
@@ -111,10 +113,10 @@ class JobManager:
                 "cancel_event": cancel_event,
                 "started_at": datetime.now(timezone.utc).isoformat(),
             }
-        self._queue.put((job_id, self._execute_http, (job_id, body, cancel_event, session_id, agent_name)))
+        self._queue.put((job_id, self._execute_http, (job_id, body, cancel_event, session_id, agent_name, inline_config)))
         return job_id
 
-    def submit_and_wait(self, body, cancel_event) -> dict:
+    def submit_and_wait(self, body, cancel_event, inline_config=None) -> dict:
         """Queue a job and block until it completes. Returns the job dict."""
         job_id = uuid.uuid4().hex
         done_event = threading.Event()
@@ -129,7 +131,7 @@ class JobManager:
             }
 
         def _run():
-            self._execute_http(job_id, body, cancel_event, session_id=None, agent_name=None)
+            self._execute_http(job_id, body, cancel_event, session_id=None, agent_name=None, inline_config=inline_config)
             done_event.set()
 
         self._queue.put((job_id, _run, ()))
@@ -201,9 +203,11 @@ class JobManager:
 
     # ── Internal execution ────────────────────────────────────────────────────
 
-    def _execute_http(self, job_id: str, body, cancel_event, session_id, agent_name):
+    def _execute_http(self, job_id: str, body, cancel_event, session_id, agent_name, inline_config=None):
         if agent_name is None:
-            agent_name = body.agent if body.agent in self.pipeline_configs else "general"
+            agent_name = "inline" if inline_config else (
+                body.agent if body.agent in self.pipeline_configs else "general"
+            )
         if session_id is None:
             session_id = db.start_session(body.model, agent=agent_name, source="http", dispatch_id=body.dispatch_id)
             with self._lock:
@@ -218,7 +222,8 @@ class JobManager:
         _status, _result, _err = "error", None, None
         try:
             query = next((m.content for m in reversed(body.messages) if m.role == "user"), "")
-            pipeline = create_pipeline(self.client, session_id, self.pipeline_configs[agent_name], cancel_event)
+            config = inline_config or self.pipeline_configs.get(agent_name)
+            pipeline = create_pipeline(self.client, session_id, config, cancel_event)
             answer = pipeline.run(query)
             _status = "cancelled" if cancel_event.is_set() else "done"
             _result = answer if answer else "[no result — pipeline returned empty]"
