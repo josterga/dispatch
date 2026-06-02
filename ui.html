@@ -875,11 +875,11 @@ function formatTime12(h, m) {
 }
 
 function localToUtcTime(hh, mm) {
-  const total = hh * 60 + mm - new Date().getTimezoneOffset();
+  const total = hh * 60 + mm + new Date().getTimezoneOffset();
   return [(((total / 60) % 24) + 24) % 24 | 0, ((total % 60) + 60) % 60];
 }
 function utcToLocalTime(hh, mm) {
-  const total = hh * 60 + mm + new Date().getTimezoneOffset();
+  const total = hh * 60 + mm - new Date().getTimezoneOffset();
   return [(((total / 60) % 24) + 24) % 24 | 0, ((total % 60) + 60) % 60];
 }
 
