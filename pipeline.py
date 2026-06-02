@@ -39,6 +39,7 @@ NUM_CTX                 = int(os.getenv("NUM_CTX", os.getenv("OLLAMA_NUM_CTX", "
 TEMPERATURE             = float(os.getenv("TEMPERATURE", "0.2"))
 OLLAMA_TIMEOUT          = int(os.getenv("TIMEOUT", "300"))
 _SYNTHESIZER_CTX        = int(os.getenv("SYNTHESIZER_CTX", "0")) or None
+_SYNTHESIZER_MAX_CHARS  = int(os.getenv("SYNTHESIZER_MAX_CHARS", "80000"))
 _PARALLEL_SUB_PIPELINES = int(os.getenv("PARALLEL_SUB_PIPELINES", "1"))  # 0 = sequential, N = max workers
 
 TOOL_RESULT_MAX_CHARS: Optional[int]     = _budget["TOOL_RESULT_MAX_CHARS"]
@@ -348,6 +349,15 @@ class AgentPipeline:
         search_limit = 0 if (has_summaries or has_fetch) else _SYNTHESIZER_BUFFER_LIMIT
         synth_input = self._compact_buffer(search_content_limit=search_limit)
         print(f"[pipeline] synthesizer: input={len(synth_input)} chars")
+        if len(synth_input) > _SYNTHESIZER_MAX_CHARS and search_limit != 0:
+            for _cap in (200, 100, 50):
+                synth_input = self._compact_buffer(search_content_limit=_cap)
+                print(f"[pipeline] synthesizer: trimmed to {len(synth_input)} chars (cap={_cap})")
+                if len(synth_input) <= _SYNTHESIZER_MAX_CHARS:
+                    break
+            else:
+                synth_input = synth_input[:_SYNTHESIZER_MAX_CHARS] + "\n[TRUNCATED: input exceeded synthesizer limit]"
+                print(f"[pipeline] synthesizer: hard-truncated to {_SYNTHESIZER_MAX_CHARS} chars")
         _t0 = time.monotonic()
         result = run_micro_agent(
             self.client, self.session_id,
