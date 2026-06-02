@@ -304,8 +304,38 @@ def create_dispatch(
 
 def get_dispatches(enabled_only: bool = False) -> list[dict]:
     conn = _get_conn()
-    where = "WHERE enabled = 1" if enabled_only else ""
-    rows = conn.execute(f"SELECT * FROM dispatches {where} ORDER BY id DESC").fetchall()
+    where = "WHERE d.enabled = 1" if enabled_only else ""
+    rows = conn.execute(f"""
+        SELECT d.*,
+            (SELECT GROUP_CONCAT(has_run, ',')
+             FROM (
+               SELECT CASE WHEN EXISTS(
+                   SELECT 1 FROM sessions WHERE dispatch_id = d.id AND DATE(started_at) = DATE('now', '-6 days')
+               ) THEN '1' ELSE '0' END AS has_run UNION ALL
+               SELECT CASE WHEN EXISTS(
+                   SELECT 1 FROM sessions WHERE dispatch_id = d.id AND DATE(started_at) = DATE('now', '-5 days')
+               ) THEN '1' ELSE '0' END UNION ALL
+               SELECT CASE WHEN EXISTS(
+                   SELECT 1 FROM sessions WHERE dispatch_id = d.id AND DATE(started_at) = DATE('now', '-4 days')
+               ) THEN '1' ELSE '0' END UNION ALL
+               SELECT CASE WHEN EXISTS(
+                   SELECT 1 FROM sessions WHERE dispatch_id = d.id AND DATE(started_at) = DATE('now', '-3 days')
+               ) THEN '1' ELSE '0' END UNION ALL
+               SELECT CASE WHEN EXISTS(
+                   SELECT 1 FROM sessions WHERE dispatch_id = d.id AND DATE(started_at) = DATE('now', '-2 days')
+               ) THEN '1' ELSE '0' END UNION ALL
+               SELECT CASE WHEN EXISTS(
+                   SELECT 1 FROM sessions WHERE dispatch_id = d.id AND DATE(started_at) = DATE('now', '-1 days')
+               ) THEN '1' ELSE '0' END UNION ALL
+               SELECT CASE WHEN EXISTS(
+                   SELECT 1 FROM sessions WHERE dispatch_id = d.id AND DATE(started_at) = DATE('now')
+               ) THEN '1' ELSE '0' END
+             )
+            ) AS last_7_days
+        FROM dispatches d
+        {where}
+        ORDER BY d.id DESC
+    """).fetchall()
     return [dict(r) for r in rows]
 
 

@@ -825,14 +825,11 @@ function statusBadgeHTML(status) {
   return `<span class="status-badge s-${status}">${status}</span>`;
 }
 
-function sparkHTML(count) {
-  const seed = (count || 1) * 7 + 3;
-  let bars = '';
-  for (let i = 0; i < 8; i++) {
-    const v = ((Math.sin(seed + i * 1.7) + 1) / 2) * 0.7 + 0.25;
-    const color = i === 7 ? 'var(--accent)' : 'var(--line-2)';
-    bars += `<span class="spark-bar" style="height:${Math.round(v*18)}px;background:${color}"></span>`;
-  }
+function sparkHTML(last7) {
+  if (!last7) return '<span class="meta">—</span>';
+  const bars = last7.split(',').map(d =>
+    `<span class="spark-bar" style="height:${d === '1' ? 14 : 3}px;background:${d === '1' ? 'var(--accent)' : 'var(--line-2)'}"></span>`
+  ).join('');
   return `<span class="spark">${bars}</span>`;
 }
 
@@ -1276,7 +1273,7 @@ function renderDispatchesTable(dispatches, kind) {
       <td><span style="color:var(--fg-2);display:block;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.prompt)}</span></td>
       <td>${schedCell}</td>
       <td class="r"><span class="mono" style="color:var(--fg-2)">${runs}</span></td>
-      <td class="r">${kind === 'active' ? sparkHTML(c.run_count) : '<span class="meta">—</span>'}</td>
+      <td class="r">${kind === 'active' ? sparkHTML(c.last_7_days) : '<span class="meta">—</span>'}</td>
       <td>${statusBadgeHTML(kind === 'active' ? 'active' : 'archived')}</td>
       <td class="r"><div style="display:inline-flex;gap:4px" onclick="event.stopPropagation()">${actions}</div></td>
     </tr>`;
