@@ -15,6 +15,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, field_validator
 
 import db
+import metrics
 from providers import LLMClient
 from pipeline import MODEL, OLLAMA_TIMEOUT
 from agent_loader import build_registry
@@ -68,6 +69,7 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
     _scheduler.start()
+    threading.Thread(target=metrics.backfill, daemon=True, name="metrics-backfill").start()
     yield
     _scheduler.shutdown(wait=False)
 
@@ -198,6 +200,27 @@ async def get_session(session_id: int, request: Request):
         raise HTTPException(status_code=404, detail="Session not found")
     db.mark_session_viewed(session_id)
     return detail
+
+
+@app.get("/api/sessions/{session_id}/events")
+async def get_session_events(session_id: int, request: Request):
+    _check_auth(request)
+    return db.get_run_events(session_id)
+
+
+@app.get("/api/sessions/{session_id}/payloads/{seq}")
+async def get_session_payload(session_id: int, seq: int, request: Request):
+    _check_auth(request)
+    payload = db.get_run_payload(session_id, seq)
+    if not payload:
+        raise HTTPException(status_code=404, detail="Payload not found (kept for %d days)" % metrics.PAYLOAD_RETENTION_DAYS)
+    return payload
+
+
+@app.get("/api/stats")
+async def get_stats(request: Request, days: int = 7):
+    _check_auth(request)
+    return metrics.stats(max(1, min(days, 365)))
 
 
 @app.post("/api/jobs")
@@ -454,7 +477,7 @@ async def create_dispatch_route(request: Request, body: DispatchRequest):
         except Exception:
             pass
     if body.run_on_create:
-        threading.Thread(target=_jobs.run_scheduled, args=(dispatch_id, body.agent, body.prompt), daemon=True).start()
+        threading.Thread(target=_jobs.run_scheduled, args=(dispatch_id, body.agent, body.prompt, "run_on_create"), daemon=True).start()
     return {"id": dispatch_id}
 
 

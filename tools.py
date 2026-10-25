@@ -161,52 +161,98 @@ def _ddg_search(query: str, freshness: Optional[str] = None) -> tuple[Optional[l
         return None, str(e)
 
 
+def _timed(fn, *args) -> tuple[Optional[list], Optional[str], int]:
+    t0 = time.monotonic()
+    results, err = fn(*args)
+    return results, err, int((time.monotonic() - t0) * 1000)
+
+
 def call_web_search(query: str, freshness: Optional[str] = None) -> dict:
+    """Search all configured providers in parallel and merge by URL.
+
+    The result's "meta" (per-provider status/timing/count, every merged hit with its rank in each
+    provider) is for run metrics only: callers pop it before handing results to a model.
+    """
     print(f'[web_search] Searching for: "{query}"' + (f" [freshness={freshness}]" if freshness else ""))
+    t0 = time.monotonic()
     ollama_ready = time.time() >= _ollama_failure_until
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {
-            "searxng": pool.submit(_searxng_search, query, freshness),
-            "brave": pool.submit(_brave_search, query, freshness),
-            "jina":  pool.submit(_jina_search, query, freshness),
+            "searxng": pool.submit(_timed, _searxng_search, query, freshness),
+            "brave": pool.submit(_timed, _brave_search, query, freshness),
+            "jina":  pool.submit(_timed, _jina_search, query, freshness),
         }
         if ollama_ready:
-            futures["ollama"] = pool.submit(_ollama_search, query)
+            futures["ollama"] = pool.submit(_timed, _ollama_search, query)
 
-    ollama_results, ollama_err = futures["ollama"].result() if "ollama" in futures else (None, None)
-    searxng_results, searxng_err = futures["searxng"].result()
-    brave_results,  brave_err  = futures["brave"].result()
-    jina_results,   jina_err   = futures["jina"].result()
+    answers = {name: f.result() for name, f in futures.items()}
+    answered = any(res for res, _, _ in answers.values())
 
     # DuckDuckGo scraping is often throttled ("No results found"): only use it when nothing else answered.
-    ddg_results, ddg_err = None, None
-    if not (searxng_results or ollama_results or brave_results or jina_results):
-        ddg_results, ddg_err = _ddg_search(query, freshness)
+    if not answered:
+        answers["ddg"] = _timed(_ddg_search, query, freshness)
 
-    seen_urls = set()
+    order = ("searxng", "ollama", "brave", "jina", "ddg")
+    meta_providers: dict[str, dict] = {}
+    for name in order:
+        if name not in answers:
+            status = "cooldown" if name == "ollama" else "not_needed" if name == "ddg" else "off"
+            meta_providers[name] = {"status": status}
+            continue
+        res, err, ms = answers[name]
+        if err:
+            meta_providers[name] = {"status": "error", "ms": ms, "error": err[:300]}
+        elif res is None:
+            meta_providers[name] = {"status": "off"}
+        else:
+            meta_providers[name] = {"status": "ok", "ms": ms, "count": len(res)}
+
+    seen: dict[str, dict] = {}
     merged = []
-    for result in (searxng_results or []) + (ollama_results or []) + (brave_results or []) + (jina_results or []) + (ddg_results or []):
-        url = result.get("url", "")
-        if url and url not in seen_urls:
-            seen_urls.add(url)
+    raw = 0
+    for name in order:
+        res = answers.get(name, (None, None, 0))[0] or []
+        for rank, result in enumerate(res, 1):
+            url = result.get("url", "")
+            if not url:
+                continue
+            raw += 1
+            if url in seen:
+                seen[url]["by"][name] = rank
+                continue
+            seen[url] = {"url": url, "title": (result.get("title") or "")[:200], "by": {name: rank}}
             merged.append(result)
+    meta = {
+        "providers": meta_providers,
+        "hits": [dict(seen[r["url"]], rank=i) for i, r in enumerate(merged, 1)],
+        "raw": raw,
+        "dupes": raw - len(merged),
+        "ddg_fallback": "ddg" in answers,
+        "ms": int((time.monotonic() - t0) * 1000),
+        "freshness": freshness,
+    }
 
     if not merged:
-        return {"error": "All search providers failed"}
+        return {"error": "All search providers failed", "meta": meta}
 
-    print(f"[web_search] {len(merged)} merged results (searxng={len(searxng_results or [])}, ollama={len(ollama_results or [])}, brave={len(brave_results or [])}, jina={len(jina_results or [])}, ddg={len(ddg_results or [])})")
+    counts = ", ".join(f"{n}={len(answers.get(n, (None,))[0] or [])}" for n in order)
+    print(f"[web_search] {len(merged)} merged results ({counts})")
 
-    source_errors = {k: v for k, v in {"searxng": searxng_err, "ollama": ollama_err, "brave": brave_err, "jina": jina_err, "ddg": ddg_err}.items() if v}
-    return {"results": merged, **({"source_errors": source_errors} if source_errors else {})}
+    source_errors = {n: p["error"] for n, p in meta_providers.items() if p.get("error")}
+    return {"results": merged, **({"source_errors": source_errors} if source_errors else {}), "meta": meta}
 
 
 JINA_FALLBACK_THRESHOLD = 3000  # chars — below this, assume thin/boilerplate content and try Jina
 
 
-def _jina_fetch(url: str) -> dict:
+def _jina_fetch(url: str, meta: Optional[dict] = None) -> dict:
     jina_url = f"https://r.jina.ai/{url}"
     print(f"[web_fetch]  Jina: {jina_url}")
+    t0 = time.monotonic()
+    jm: dict = {}
+    if meta is not None:
+        meta["jina"] = jm
     try:
         jina_key = os.getenv("JINA_API_KEY", "")
         headers = {"User-Agent": "Mozilla/5.0 (compatible; local-web-search/1.0)", "Accept": "text/plain"}
@@ -218,13 +264,18 @@ def _jina_fetch(url: str) -> dict:
             timeout=20,
             allow_redirects=True,
         )
+        jm["status"] = r.status_code
         r.raise_for_status()
         text = r.text.strip()
+        jm["chars"] = len(text)
         print(f"[web_fetch]  Jina content: {len(text)} chars")
         return {"content": text}
     except Exception as e:
+        jm["error"] = str(e)[:300]
         print(f"[web_fetch]  Jina ERROR: {e}")
         return {"error": str(e)}
+    finally:
+        jm["ms"] = int((time.monotonic() - t0) * 1000)
 
 
 def _jina_search(query: str, freshness: Optional[str] = None) -> tuple[Optional[list], Optional[str]]:
@@ -271,17 +322,37 @@ def _is_local_url(url: str) -> bool:
 
 
 def call_web_fetch(url: str) -> dict:
+    """Fetch a page as text. The result's "meta" (HTTP status, sizes, timings, Jina fallback) is for
+    run metrics only: callers pop it before handing the content to a model."""
     print(f"[web_fetch]  Fetching: {url}")
+    t0 = time.monotonic()
     local = _is_local_url(url)
+    meta: dict = {"local": local}
+    result = _fetch(url, local, meta)
+    content = result.get("content") or ""
+    meta["chars"] = len(content)
+    meta["ms"] = int((time.monotonic() - t0) * 1000)
+    result["meta"] = meta
+    return result
+
+
+def _fetch(url: str, local: bool, meta: dict) -> dict:
     if WEB_FETCH_PROVIDER == "jina" and not local:
-        return _jina_fetch(url)
+        meta["via"] = "jina"
+        return _jina_fetch(url, meta)
+    meta["via"] = "http"
     try:
+        t0 = time.monotonic()
         r = requests.get(
             url,
             headers={"User-Agent": "Mozilla/5.0 (compatible; local-web-search/1.0)"},
             timeout=12,
             allow_redirects=True,
         )
+        meta.update(status=r.status_code, bytes=len(r.content), ctype=r.headers.get("content-type", ""),
+                    http_ms=int((time.monotonic() - t0) * 1000), redirects=len(r.history) or None)
+        if r.url != url:
+            meta["final_url"] = r.url
         r.raise_for_status()
         ctype = r.headers.get("content-type", "")
         if "json" in ctype:
@@ -295,16 +366,21 @@ def call_web_fetch(url: str) -> dict:
             text = re.sub(r"\s+", " ", text).strip()
         print(f"[web_fetch]  content: {len(text)} chars, snippet: {text[:200]!r}")
         if len(text) < JINA_FALLBACK_THRESHOLD and not local:
-            return _jina_fetch(url)
+            meta["http_chars"] = len(text)
+            meta["via"] = "jina_fallback"
+            return _jina_fetch(url, meta)
         return {"content": text}
     except requests.exceptions.HTTPError as e:
         print(f"[web_fetch] ERROR: {e}")
+        meta["err"] = str(e)[:300]
         return {"error": str(e)}
     except requests.exceptions.Timeout:
         print("[web_fetch] ERROR: Request timed out")
+        meta["err"] = "timeout"
         return {"error": "Web fetch timed out"}
     except Exception as e:
         print(f"[web_fetch] ERROR: {e}")
+        meta["err"] = f"{type(e).__name__}: {e}"[:300]
         return {"error": str(e)}
 
 
@@ -318,5 +394,14 @@ def dispatch_tool(name: str, args: dict, session_id: int) -> dict:
         print(f"[tool] Unknown tool: {name}")
         result = {"error": f"Unknown tool: {name}"}
     duration_ms = int((time.monotonic() - t0) * 1000)
+    meta = result.pop("meta", None)
     db.log_tool_call(session_id, name, args, result, duration_ms)
+    if meta is not None:
+        import metrics
+        if name == "web_search":
+            metrics.get(session_id).event("search", None, args["query"], start=t0, ok="results" in result,
+                                          error=result.get("error"), round=0, via="agent_tool", **meta)
+        else:
+            metrics.get(session_id).event("fetch", None, args["url"], start=t0, ok="error" not in result,
+                                          error=result.get("error"), source="agent_tool", **meta)
     return result

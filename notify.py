@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 
 import requests
 
@@ -13,10 +14,16 @@ _SUMMARY_PROMPT = (
 )
 
 
-def summarize(client, result: str) -> str:
+def summarize(client, result: str, session_id=None) -> str:
+    import time
+    import metrics
     from providers import FAST_MODEL, MODEL
     from pipeline import NUM_CTX
     model = FAST_MODEL or MODEL
+    messages = [{"role": "user", "content": f"{_SUMMARY_PROMPT}\n\n{result[:4000]}"}]
+    options = {"num_ctx": NUM_CTX, "num_predict": 120, "temperature": 0}
+    rec = metrics.get(session_id)
+    t0 = time.monotonic()
     try:
         resp = client.chat(
             model=model,
@@ -29,14 +36,17 @@ def summarize(client, result: str) -> str:
             num_ctx=NUM_CTX,  # same as the pipeline: a different num_ctx makes Ollama reload the model
         )
         text = (resp.message.content or "").strip()
+        rec.llm("notify", sub=None, start=t0, model=model, options=options, messages=messages, output=text, usage=resp.usage)
         return text if text else result[:300]
-    except Exception:
+    except Exception as e:
+        rec.llm("notify", sub=None, start=t0, model=model, options=options, messages=messages, error=e)
         return result[:300]
 
 
-def send(title: str, body: str, tags: list[str] = (), priority: str = "default") -> None:
+def send(title: str, body: str, tags: list[str] = (), priority: str = "default") -> tuple[Optional[int], Optional[str]]:
+    """Returns (HTTP status, error); (None, "not configured") without a topic."""
     if not _NTFY_TOPIC:
-        return
+        return None, "not configured"
     headers = {
         "Title": title,
         "Tags": ",".join(tags),
@@ -47,6 +57,7 @@ def send(title: str, body: str, tags: list[str] = (), priority: str = "default")
     if _DISPATCH_URL:
         headers["Click"] = _DISPATCH_URL
     try:
-        requests.post(f"{_NTFY_URL}/{_NTFY_TOPIC}", data=body.encode(), headers=headers, timeout=5)
-    except Exception:
-        pass
+        r = requests.post(f"{_NTFY_URL}/{_NTFY_TOPIC}", data=body.encode(), headers=headers, timeout=5)
+        return r.status_code, None if r.ok else r.text[:200]
+    except Exception as e:
+        return None, f"{type(e).__name__}: {e}"

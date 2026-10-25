@@ -43,6 +43,13 @@ class NormalizedMessage:
 @dataclass
 class NormalizedResponse:
     message: NormalizedMessage
+    # Token counts / timings as reported by the provider (keys: prompt_tokens, output_tokens,
+    # stop_reason; Ollama adds total_ms, load_ms, prompt_ms, gen_ms, thinking_chars).
+    usage: dict = field(default_factory=dict)
+
+
+def _ns_to_ms(v) -> Optional[int]:
+    return int(v / 1_000_000) if v is not None else None
 
 
 # ── Provider client ───────────────────────────────────────────────────────────
@@ -125,8 +132,19 @@ class LLMClient:
                 )
                 for tc in raw.tool_calls
             ]
+        usage = {
+            "prompt_tokens": getattr(resp, "prompt_eval_count", None),
+            "output_tokens": getattr(resp, "eval_count", None),
+            "total_ms": _ns_to_ms(getattr(resp, "total_duration", None)),
+            "load_ms": _ns_to_ms(getattr(resp, "load_duration", None)),
+            "prompt_ms": _ns_to_ms(getattr(resp, "prompt_eval_duration", None)),
+            "gen_ms": _ns_to_ms(getattr(resp, "eval_duration", None)),
+            "stop_reason": getattr(resp, "done_reason", None),
+            "thinking_chars": len(getattr(raw, "thinking", None) or "") or None,
+        }
         return NormalizedResponse(
-            message=NormalizedMessage(content=raw.content or None, tool_calls=tool_calls)
+            message=NormalizedMessage(content=raw.content or None, tool_calls=tool_calls),
+            usage={k: v for k, v in usage.items() if v is not None},
         )
 
     # ── OpenAI / Fireworks ────────────────────────────────────────────────────
@@ -172,6 +190,12 @@ class LLMClient:
                 else:
                     raise
         choice = resp.choices[0].message
+        u = getattr(resp, "usage", None)
+        usage = {
+            "prompt_tokens": getattr(u, "prompt_tokens", None),
+            "output_tokens": getattr(u, "completion_tokens", None),
+            "stop_reason": resp.choices[0].finish_reason,
+        }
         tool_calls = None
         if choice.tool_calls:
             tool_calls = [
@@ -185,7 +209,8 @@ class LLMClient:
                 for tc in choice.tool_calls
             ]
         return NormalizedResponse(
-            message=NormalizedMessage(content=choice.content, tool_calls=tool_calls)
+            message=NormalizedMessage(content=choice.content, tool_calls=tool_calls),
+            usage={k: v for k, v in usage.items() if v is not None},
         )
 
     # ── Anthropic ─────────────────────────────────────────────────────────────
@@ -284,5 +309,10 @@ class LLMClient:
                 content=content_text,
                 tool_calls=tool_calls,
                 _anthropic_blocks=raw_blocks,
-            )
+            ),
+            usage={k: v for k, v in {
+                "prompt_tokens": getattr(resp.usage, "input_tokens", None),
+                "output_tokens": getattr(resp.usage, "output_tokens", None),
+                "stop_reason": resp.stop_reason,
+            }.items() if v is not None},
         )

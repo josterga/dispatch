@@ -1,12 +1,14 @@
 import io
 import sys
 import threading
+import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from queue import Queue
 from typing import Optional
 
 import db
+import metrics
 import notify
 from pipeline import MODEL, create_pipeline
 
@@ -52,6 +54,20 @@ def _current_step(logs: str) -> Optional[str]:
             if prefix in line:
                 return step
     return None
+
+
+def _notify(client, session_id: int, title: str, result: str) -> None:
+    """Push summary + ntfy, recorded as one "notify" event of the run."""
+    t0 = time.monotonic()
+    summary = notify.summarize(client, result, session_id)
+    summary_ms = int((time.monotonic() - t0) * 1000)
+    status, err = notify.send(title=title, body=summary)
+    metrics.get(session_id).event("notify", "notify", title, start=t0, ok=status is not None and status < 400,
+                                  error=err, summary_ms=summary_ms, http_status=status, chars=len(summary))
+
+
+def _run_status(answer: Optional[str], cancelled: bool) -> str:
+    return "cancelled" if cancelled else "done" if answer else "empty"
 
 
 class JobManager:
@@ -169,8 +185,26 @@ class JobManager:
         with self._lock:
             return self._jobs[job_id]
 
-    def run_scheduled(self, dispatch_id: int, agent: str, prompt: str) -> None:
-        """Called by APScheduler for dispatch-triggered jobs."""
+    def _scheduled_for(self, dispatch_id: int) -> Optional[str]:
+        """The fire time APScheduler is running this job for (its latest fire time <= now)."""
+        try:
+            now = datetime.now(timezone.utc)
+            job = self.scheduler.get_job(f"dispatch_{dispatch_id}")
+            if job is None or not hasattr(job.trigger, "fields"):  # one-off DateTrigger, possibly already removed
+                d = next((d for d in db.get_dispatches() if d["id"] == dispatch_id), None)
+                if d and d.get("trigger_type") == "once":
+                    t = datetime.fromisoformat(d["schedule"])
+                    return (t if t.tzinfo else t.replace(tzinfo=timezone.utc)).isoformat()
+                return None
+            prev, t = None, job.trigger.get_next_fire_time(None, now - timedelta(hours=1))
+            while t and t <= now:
+                prev, t = t, job.trigger.get_next_fire_time(t, t + timedelta(seconds=1))
+            return prev.astimezone(timezone.utc).isoformat() if prev else None
+        except Exception:
+            return None
+
+    def run_scheduled(self, dispatch_id: int, agent: str, prompt: str, trigger: str = "scheduled") -> None:
+        """Called by APScheduler for dispatch-triggered jobs (and on create with run_on_create)."""
         with self._lock:
             for job in self._jobs.values():
                 if job.get("dispatch_id") == dispatch_id and job["status"] in ("queued", "running"):
@@ -180,6 +214,7 @@ class JobManager:
         agent_name = agent if agent in self.pipeline_configs else "general"
         job_id = uuid.uuid4().hex
         cancel_event = threading.Event()
+        scheduled_for = self._scheduled_for(dispatch_id) if trigger == "scheduled" else None
 
         session_id = db.start_session(MODEL, agent=agent_name, source="dispatch", dispatch_id=dispatch_id)
         db.log_message(session_id, "user", prompt)
@@ -197,18 +232,23 @@ class JobManager:
             }
 
         def _run():
+            metrics.start(session_id, trigger, queued_at=self._jobs[job_id]["started_at"],
+                          scheduled_for=scheduled_for, dispatch_id=dispatch_id)
             tee = TeeStream(sys.stdout, flush_cb=lambda logs: db.set_session_logs(session_id, logs))
             sys.stdout = tee
             with self._lock:
                 self._jobs[job_id]["tee"] = tee
             _status, _result, _err = "error", None, None
+            answer, _exc, _mstatus = None, None, "error"
             try:
                 pipeline = create_pipeline(self.client, session_id, self.pipeline_configs[agent_name], cancel_event)
                 answer = pipeline.run(prompt)
                 _status = "done"
+                _mstatus = _run_status(answer, cancel_event.is_set())
                 _result = answer if answer else "[no result — pipeline returned empty]"
                 db.log_message(session_id, "assistant", _result)
             except Exception as e:
+                _exc = e
                 _err = str(e)
                 db.log_message(session_id, "error", _err)
             finally:
@@ -228,10 +268,10 @@ class JobManager:
                         self.scheduler.remove_job(f"dispatch_{dispatch_id}")
                     except Exception:
                         pass
-                label = prompt[:60] + ("…" if len(prompt) > 60 else "")
+                metrics.get(session_id).mark_ended()
                 if _status == "done" and _result:
-                    summary = notify.summarize(self.client, _result)
-                    notify.send(title=agent, body=summary)
+                    _notify(self.client, session_id, agent, _result)
+                metrics.finish(session_id, _mstatus, answer, _exc)
 
         self._queue.put((job_id, _run, ()))
 
@@ -250,22 +290,27 @@ class JobManager:
                 if m.role == "user":
                     db.log_message(session_id, "user", m.content)
                     break
+        metrics.start(session_id, "manual" if getattr(body, "dispatch_id", None) else "http",
+                      queued_at=self._jobs[job_id]["started_at"], dispatch_id=getattr(body, "dispatch_id", None))
 
         tee = TeeStream(sys.stdout, flush_cb=lambda logs: db.set_session_logs(session_id, logs))
         sys.stdout = tee
         with self._lock:
             self._jobs[job_id]["tee"] = tee
         _status, _result, _err = "error", None, None
+        answer, _exc, _mstatus = None, None, "error"
         try:
             query = next((m.content for m in reversed(body.messages) if m.role == "user"), "")
             config = inline_config or self.pipeline_configs.get(agent_name)
             pipeline = create_pipeline(self.client, session_id, config, cancel_event)
             answer = pipeline.run(query)
             _status = "cancelled" if cancel_event.is_set() else "done"
+            _mstatus = _run_status(answer, cancel_event.is_set())
             _result = answer if answer else "[no result — pipeline returned empty]"
             if _status != "cancelled":
                 db.log_message(session_id, "assistant", _result)
         except Exception as e:
+            _exc = e
             _err = str(e)
             db.log_message(session_id, "error", _err)
         finally:
@@ -279,9 +324,8 @@ class JobManager:
                 elif _err:
                     self._jobs[job_id]["error"] = _err
             db.end_session(session_id)
+            metrics.get(session_id).mark_ended()
             if getattr(body, "dispatch_id", None):
-                prompt_ = next((m.content for m in reversed(body.messages) if m.role == "user"), "")
-                label = prompt_[:60] + ("…" if len(prompt_) > 60 else "")
                 if _status == "done" and _result:
-                    summary = notify.summarize(self.client, _result)
-                    notify.send(title=agent_name, body=summary)
+                    _notify(self.client, session_id, agent_name, _result)
+            metrics.finish(session_id, _mstatus, answer, _exc)

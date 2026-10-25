@@ -1,7 +1,7 @@
 import json
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeout
 from datetime import datetime
 from typing import Optional
 
@@ -10,6 +10,7 @@ from providers import LLMClient, MODEL, PROVIDER
 from dotenv import load_dotenv
 
 import db
+import metrics
 from agent_config import SubQueryConfig, DomainConfig
 from prompts import (
     PROMPT_PLANNER, PROMPT_RANKER, PROMPT_VALIDATOR,
@@ -73,8 +74,11 @@ def run_agent(
     log_response: bool = True,
     num_ctx: Optional[int] = None,
     num_predict: Optional[int] = None,
+    phase: str = "agent",
+    sub: Optional[str] = None,
 ) -> Optional[str]:
     """Run the agentic loop. Returns the final answer, or None if max iterations hit or cancelled."""
+    rec = metrics.get(session_id)
     if tools is None:
         tools = TOOLS
     preamble = _context_preamble()
@@ -86,9 +90,12 @@ def run_agent(
         messages.insert(0, {"role": "system", "content": full_system})
     # Native Ollama `think` (a "/no_think" prompt prefix only works for Qwen3; gemma4 ignores it).
     think_opt = None if think else False
+    options = {"num_ctx": num_ctx or NUM_CTX, "num_predict": num_predict, "think": think_opt,
+               "temperature": TEMPERATURE, "tools": len(tools) or None}
     for _ in range(max_iterations):
         if cancel_event and cancel_event.is_set():
             return None
+        _t0 = time.monotonic()
         try:
             response = client.chat(
                 model=model or MODEL,
@@ -100,9 +107,12 @@ def run_agent(
                 think=think_opt,
             )
         except Exception as e:
+            rec.llm(phase, sub=sub, start=_t0, model=model or MODEL, options=options, messages=messages, error=e)
             print(f"[agent] ERROR: model call failed ({type(e).__name__}): {e}")
             return None
         msg = response.message
+        rec.llm(phase, sub=sub, start=_t0, model=model or MODEL, options=options, messages=messages,
+                output=msg.content, usage=response.usage, tool_calls=len(msg.tool_calls or []))
         assistant_entry: dict = {"role": "assistant", "content": msg.content or ""}
         if msg._anthropic_blocks is not None:
             assistant_entry["_anthropic_blocks"] = msg._anthropic_blocks
@@ -142,6 +152,7 @@ def run_agent(
         "role": "user",
         "content": "You've used your full tool budget. Summarize what you've found and give your best answer now. Do not call any more tools.",
     })
+    _t0 = time.monotonic()
     try:
         resp = client.chat(
             model=model or MODEL,
@@ -152,11 +163,15 @@ def run_agent(
             think=think_opt,
         )
         final = resp.message.content
+        rec.llm(phase, sub=sub, start=_t0, model=model or MODEL, options={**options, "tools": None, "forced_final": True},
+                messages=messages, output=final, usage=resp.usage)
         if final:
             if log_response:
                 db.log_message(session_id, "assistant", final)
             return final
     except Exception as e:
+        rec.llm(phase, sub=sub, start=_t0, model=model or MODEL, options={**options, "tools": None, "forced_final": True},
+                messages=messages, error=e)
         print(f"[agent] ERROR: forced final response failed ({type(e).__name__}): {e}")
     return None
 
@@ -172,6 +187,8 @@ def run_micro_agent(
     model: Optional[str] = None,
     num_ctx: Optional[int] = None,
     num_predict: Optional[int] = None,
+    phase: str = "micro",
+    sub: Optional[str] = None,
 ) -> Optional[str]:
     """Single-purpose agent call with a capped tool budget and no chain-of-thought overhead."""
     messages = [{"role": "user", "content": user_content}]
@@ -186,6 +203,8 @@ def run_micro_agent(
         log_response=False,
         num_ctx=num_ctx,
         num_predict=num_predict,
+        phase=phase,
+        sub=sub,
     )
 
 
@@ -241,6 +260,7 @@ class AgentPipeline:
         session_id: int,
         config: DomainConfig,
         cancel_event=None,
+        sub: Optional[str] = None,
     ):
         self.client = client
         self.session_id = session_id
@@ -248,9 +268,21 @@ class AgentPipeline:
         self.cancel_event = cancel_event
         self.research_buffer: list[dict] = []
         self.freshness: Optional[str] = config.freshness
+        self.sub = sub  # sub-pipeline label inside a MultiAgentPipeline
+        self.rec = metrics.get(session_id)
+        self._round = 0  # 0 = planner queries, N = validator retry round N
+
+    def _micro(self, phase: str, system_prompt: str, user_content: str, **kw) -> Optional[str]:
+        return run_micro_agent(
+            self.client, self.session_id, system_prompt, user_content,
+            tools=[], max_iterations=1, cancel_event=self.cancel_event,
+            phase=phase, sub=self.sub, **kw,
+        )
 
     def run(self, query: str) -> Optional[str]:
         goal = self.config.goal_template.replace("{query}", query)
+        if self.sub is None:
+            metrics.record_config(self.rec, self.config, MODEL)
 
         print(f"[pipeline] model={MODEL}")
 
@@ -259,6 +291,7 @@ class AgentPipeline:
             today = datetime.now().strftime("%Y-%m-%d")
             queries = [u.replace("{today}", today) for u in self.config.direct_sources]
             print(f"[pipeline] planner: {len(queries)} direct_sources (skipped planner)")
+            self.rec.event("decision", "planner", "planner", sub=self.sub, direct_sources=True, queries=queries)
         else:
             print(f"[pipeline] planner: generating {self.config.planner_query_count} queries...")
             sources_hint = ""
@@ -269,23 +302,20 @@ class AgentPipeline:
                 goal=goal,
                 sources_hint=sources_hint,
             )
-            _t0 = time.monotonic()
-            queries_json = run_micro_agent(
-                self.client, self.session_id,
-                plan_prompt,
-                goal,
-                tools=[],
-                max_iterations=1,
-                cancel_event=self.cancel_event,
-            )
-            print(f"[pipeline] planner: {int((time.monotonic()-_t0)*1000)}ms")
+            with self.rec.phase("planner", sub=self.sub):
+                _t0 = time.monotonic()
+                queries_json = self._micro("planner", plan_prompt, goal)
+                print(f"[pipeline] planner: {int((time.monotonic()-_t0)*1000)}ms")
             if queries_json is None:
                 print("[pipeline] planner: WARNING: model returned no output — no queries will be generated")
-            queries = _parse_json_output(queries_json, [])
+            parsed = _parse_json_output(queries_json, None)
+            queries = parsed if parsed is not None else []
             if isinstance(queries, dict):
                 queries = list(queries.values())
             queries = [q for q in queries if isinstance(q, str)]
             print(f"[pipeline] planner: {len(queries)} queries generated")
+            self.rec.event("decision", "planner", "planner", sub=self.sub, parsed_ok=parsed is not None,
+                           requested=self.config.planner_query_count, queries=queries)
 
         if not queries:
             print("[pipeline] planner: no queries generated, skipping research phases")
@@ -308,26 +338,30 @@ class AgentPipeline:
             freshness_label = _FRESHNESS_LABELS.get(self.freshness or "", "any date")
             for loop_i in range(self.config.max_validator_loops):
                 print(f"[pipeline] validator: loop {loop_i + 1}/{self.config.max_validator_loops}")
-                _t0 = time.monotonic()
-                val_out = run_micro_agent(
-                    self.client, self.session_id,
-                    PROMPT_VALIDATOR.format(goal=goal, freshness_label=freshness_label),
-                    self._compact_buffer(),
-                    tools=[],
-                    max_iterations=1,
-                    cancel_event=self.cancel_event,
-                )
-                print(f"[pipeline] validator: {int((time.monotonic()-_t0)*1000)}ms")
+                with self.rec.phase("validator", sub=self.sub, loop=loop_i + 1):
+                    _t0 = time.monotonic()
+                    val_out = self._micro(
+                        "validator",
+                        PROMPT_VALIDATOR.format(goal=goal, freshness_label=freshness_label),
+                        self._compact_buffer(),
+                    )
+                    print(f"[pipeline] validator: {int((time.monotonic()-_t0)*1000)}ms")
                 if val_out is None:
                     print("[pipeline] validator: WARNING: model returned no output — assuming sufficient")
-                verdict = _parse_json_output(val_out, {"sufficient": True})
+                parsed = _parse_json_output(val_out, None)
+                verdict = parsed if isinstance(parsed, dict) else {"sufficient": True}
                 print(f"[pipeline] validator: sufficient={verdict.get('sufficient')}, notes={verdict.get('notes', '')[:80]}")
+                retry_queries = [q for q in verdict.get("retry_queries", []) if isinstance(q, str)]
+                self.rec.event("decision", "validator", "validator", sub=self.sub, loop=loop_i + 1,
+                               parsed_ok=isinstance(parsed, dict), model_failed=val_out is None,
+                               sufficient=verdict.get("sufficient", True), missing_topics=verdict.get("missing_topics"),
+                               retry_queries=retry_queries, notes=verdict.get("notes"))
                 if verdict.get("sufficient", True):
                     break
-                retry_queries = [q for q in verdict.get("retry_queries", []) if isinstance(q, str)]
                 if not retry_queries:
                     break
                 print(f"[pipeline] validator: retrying with {len(retry_queries)} additional queries: {retry_queries}")
+                self._round = loop_i + 1
                 self._run_searches(retry_queries)
                 if self.config.validate_links:
                     self._run_link_validator()
@@ -339,80 +373,131 @@ class AgentPipeline:
         print("[pipeline] synthesizer: formatting final output...")
         if not self.research_buffer:
             print("[pipeline] synthesizer: no research collected — aborting to prevent hallucination")
+            self.rec.event("synth_input", "synthesizer", "synthesizer", sub=self.sub, ok=False, error="no research collected")
             return None
         synth_prompt = PROMPT_SYNTHESIZER.format(output_template=self.config.output_template)
         has_summaries = any(e.get("phase") == "summaries" for e in self.research_buffer)
         has_fetch = any(e.get("phase") == "fetch" for e in self.research_buffer)
         search_limit = 0 if (has_summaries or has_fetch) else _SYNTHESIZER_BUFFER_LIMIT
         synth_input = self._compact_buffer(search_content_limit=search_limit)
+        chars_before, trim_cap, hard_truncated = len(synth_input), None, False
         print(f"[pipeline] synthesizer: input={len(synth_input)} chars")
         if len(synth_input) > _SYNTHESIZER_MAX_CHARS and search_limit != 0:
             for _cap in (200, 100, 50):
                 synth_input = self._compact_buffer(search_content_limit=_cap)
+                trim_cap = _cap
                 print(f"[pipeline] synthesizer: trimmed to {len(synth_input)} chars (cap={_cap})")
                 if len(synth_input) <= _SYNTHESIZER_MAX_CHARS:
                     break
             else:
                 synth_input = synth_input[:_SYNTHESIZER_MAX_CHARS] + "\n[TRUNCATED: input exceeded synthesizer limit]"
+                hard_truncated = True
                 print(f"[pipeline] synthesizer: hard-truncated to {_SYNTHESIZER_MAX_CHARS} chars")
-        _t0 = time.monotonic()
-        result = run_micro_agent(
-            self.client, self.session_id,
-            synth_prompt,
-            synth_input,
-            tools=[],
-            max_iterations=1,
-            cancel_event=self.cancel_event,
-            num_ctx=_SYNTHESIZER_CTX,
-            num_predict=_SYNTHESIZER_MAX_TOKENS,
-        )
-        print(f"[pipeline] synthesizer: {int((time.monotonic()-_t0)*1000)}ms")
+        self.rec.event("synth_input", "synthesizer", "synthesizer", sub=self.sub, chars_before=chars_before,
+                       chars_after=len(synth_input), search_content_limit=search_limit, trim_cap=trim_cap,
+                       hard_truncated=hard_truncated, source_errors_note="[SOURCE ERRORS]" in synth_input,
+                       **self._buffer_sources())
+        with self.rec.phase("synthesizer", sub=self.sub):
+            _t0 = time.monotonic()
+            result = self._micro(
+                "synthesizer", synth_prompt, synth_input,
+                num_ctx=_SYNTHESIZER_CTX,
+                num_predict=_SYNTHESIZER_MAX_TOKENS,
+            )
+            print(f"[pipeline] synthesizer: {int((time.monotonic()-_t0)*1000)}ms")
         if not result:
             print("[pipeline] synthesizer: WARNING: model returned no output")
             return None
         return result
+
+    def _buffer_sources(self) -> dict:
+        """What the synthesizer sees, by kind; inbox pages count as their items, not one page."""
+        has_summaries = any(e.get("phase") == "summaries" for e in self.research_buffer)
+        urls: set[str] = set()
+        out = {"inbox_items": 0, "direct_pages": 0, "fetched_pages": 0, "summarized_pages": 0, "search_results": 0}
+        for entry in self.research_buffer:
+            phase = entry.get("phase")
+            for item in entry.get("content", []):
+                if phase == "direct":
+                    ib = metrics.inbox_stats(item.get("content", ""))
+                    if ib is not None:
+                        out["inbox_items"] += ib["items"]
+                    else:
+                        out["direct_pages"] += 1
+                        urls.add(item.get("url", ""))
+                elif phase == "fetch" and not has_summaries:
+                    out["fetched_pages"] += 1
+                    urls.add(item.get("url", ""))
+                elif phase == "summaries":
+                    out["summarized_pages"] += 1
+                    urls.add(item.get("url", ""))
+                elif phase == "search":
+                    for r in item.get("results", []):
+                        out["search_results"] += 1
+                        urls.add(r.get("url", ""))
+        urls.discard("")
+        return {**out, "urls": sorted(urls)}
 
     def _run_searches(self, queries: list[str]) -> None:
         """Fire all search queries in parallel — pure HTTP, no Ollama inference."""
         if not queries:
             return
         print(f"[pipeline] searcher: firing {len(queries)} queries in parallel")
+        is_direct = all(q.startswith(("http://", "https://")) for q in queries)
 
-        def _search(q: str) -> tuple[str, dict]:
+        def _search(q: str) -> tuple[str, dict, float]:
+            t0 = time.monotonic()
             allowed = self.config.tool_bindings  # empty list = allow all tools
             if q.startswith("http://") or q.startswith("https://"):
                 if allowed and "web_fetch" not in allowed:
-                    return q, {}
-                return q, call_web_fetch(q)
+                    return q, {"skipped": "web_fetch not bound"}, t0
+                return q, call_web_fetch(q), t0
             if allowed and "web_search" not in allowed:
-                return q, {}
-            return q, call_web_search(q, freshness=self.freshness)
+                return q, {"skipped": "web_search not bound"}, t0
+            return q, call_web_search(q, freshness=self.freshness), t0
 
         all_results = []
         direct_pages: dict[str, str] = {}  # URL sources (Direct Fetch): kept whole, not trimmed like search snippets
         all_source_errors: dict[str, dict] = {}
-        with ThreadPoolExecutor(max_workers=min(len(queries), 8)) as pool:
-            futures = {pool.submit(_search, q): q for q in queries}
-            for future in as_completed(futures):
-                q, result = future.result()
-                if result and not result.get("error"):
-                    if result.get("source_errors"):
-                        all_source_errors[q] = result["source_errors"]
-                    if "results" in result:
-                        trimmed = [
-                            {
-                                "title": r.get("title", ""),
-                                "url": r.get("url", ""),
-                                "content": r.get("content", "")[:1500],
-                            }
-                            for r in (result.get("results") or [])
-                        ]
-                    else:
-                        if result.get("content"):
-                            direct_pages[q] = result["content"][:10000]
+        with self.rec.phase("fetcher" if is_direct else "searcher", sub=self.sub, round=self._round, queries=len(queries)):
+            with ThreadPoolExecutor(max_workers=min(len(queries), 8)) as pool:
+                futures = {pool.submit(_search, q): q for q in queries}
+                for future in as_completed(futures):
+                    q, result, t0 = future.result()
+                    meta = result.pop("meta", None) or {}
+                    is_url = q.startswith(("http://", "https://"))
+                    if result.get("skipped"):
+                        self.rec.event("fetch" if is_url else "search", "fetcher" if is_url else "searcher", q, sub=self.sub, start=t0, ok=False,
+                                       error=result["skipped"], round=self._round)
                         continue
-                    if trimmed:
-                        all_results.append({"query": q, "results": trimmed})
+                    if is_url:
+                        content = result.get("content") or ""
+                        ib = metrics.inbox_stats(content)
+                        self.rec.event("fetch", "fetcher", q, sub=self.sub, start=t0, ok="error" not in result,
+                                       error=result.get("error"), source="direct", kept_chars=min(len(content), 10000),
+                                       truncated=len(content) > 10000, round=self._round,
+                                       inbox={k: v for k, v in ib.items() if k != "item_urls"} if ib else None, **meta)
+                    else:
+                        self.rec.event("search", "searcher", q, sub=self.sub, start=t0, ok="results" in result,
+                                       error=result.get("error"), round=self._round, **meta)
+                    if result and not result.get("error"):
+                        if result.get("source_errors"):
+                            all_source_errors[q] = result["source_errors"]
+                        if "results" in result:
+                            trimmed = [
+                                {
+                                    "title": r.get("title", ""),
+                                    "url": r.get("url", ""),
+                                    "content": r.get("content", "")[:1500],
+                                }
+                                for r in (result.get("results") or [])
+                            ]
+                        else:
+                            if result.get("content"):
+                                direct_pages[q] = result["content"][:10000]
+                            continue
+                        if trimmed:
+                            all_results.append({"query": q, "results": trimmed})
 
         if direct_pages:
             # Own phase so _compact_buffer passes it through in full (search content gets cut to
@@ -443,7 +528,9 @@ class AgentPipeline:
         print(f"[pipeline] link-validator: checking {len(all_urls)} URLs in parallel")
         TIMEOUT = 3
 
-        def _check(url: str) -> tuple[str, bool]:
+        def _check(url: str) -> dict:
+            t0 = time.monotonic()
+            out: dict = {"url": url}
             try:
                 resp = requests.head(
                     url,
@@ -451,26 +538,31 @@ class AgentPipeline:
                     timeout=TIMEOUT,
                     allow_redirects=True,
                 )
-                if resp.status_code == 405:
-                    return url, True  # HEAD not allowed but URL exists
-                if resp.status_code == 403:
-                    # Some sites block HEAD but serve GET — treat as alive
-                    return url, True
-                return url, resp.status_code < 400
-            except Exception:
-                return url, False
+                out["status"] = resp.status_code
+                # 405: HEAD not allowed but URL exists; 403: some sites block HEAD but serve GET — treat as alive
+                out["ok"] = resp.status_code in (403, 405) or resp.status_code < 400
+            except Exception as e:
+                out["ok"] = False
+                out["error"] = type(e).__name__
+            out["ms"] = int((time.monotonic() - t0) * 1000)
+            return out
 
         dead: set[str] = set()
+        checks: list[dict] = []
+        start = time.monotonic()
         with ThreadPoolExecutor(max_workers=min(len(all_urls), 16)) as pool:
             futures = {pool.submit(_check, u): u for u in all_urls}
             for future in as_completed(futures):
                 url = futures[future]
                 try:
-                    _, ok = future.result()
-                    if not ok:
-                        dead.add(url)
-                except Exception:
+                    c = future.result()
+                except Exception as e:
+                    c = {"url": url, "ok": False, "error": type(e).__name__}
+                checks.append(c)
+                if not c["ok"]:
                     dead.add(url)
+        self.rec.event("link_check", "link_validator", None, sub=self.sub, start=start, round=self._round, urls=checks)
+        self.rec.event("phase", "link_validator", "link_validator", sub=self.sub, start=start, round=self._round)
 
         if not dead:
             print("[pipeline] link-validator: all URLs live")
@@ -491,18 +583,16 @@ class AgentPipeline:
             return
 
         print(f"[pipeline] ranker: selecting from {len(url_list)} candidate URLs")
-        rank_out = run_micro_agent(
-            self.client, self.session_id,
-            PROMPT_RANKER.format(goal=goal),
-            json.dumps(url_list),
-            tools=[],
-            max_iterations=1,
-            cancel_event=self.cancel_event,
-        )
-        ranked_urls = _parse_json_output(rank_out, [])
+        with self.rec.phase("ranker", sub=self.sub, round=self._round):
+            rank_out = self._micro("ranker", PROMPT_RANKER.format(goal=goal), json.dumps(url_list))
+        parsed = _parse_json_output(rank_out, None)
+        ranked_urls = parsed if parsed is not None else []
         if isinstance(ranked_urls, dict):
             ranked_urls = list(ranked_urls.values())
         ranked_urls = list(dict.fromkeys(u for u in ranked_urls if isinstance(u, str)))[:5]
+        self.rec.event("decision", "ranker", "ranker", sub=self.sub, round=self._round, candidates=len(url_list),
+                       parsed_ok=parsed is not None, model_failed=rank_out is None, selected=ranked_urls,
+                       selected_known=sum(1 for u in ranked_urls if any(c["url"] == u for c in url_list)))
 
         if rank_out is None:
             print("[pipeline] ranker: WARNING: model call failed — skipping fetch phase")
@@ -513,23 +603,42 @@ class AgentPipeline:
 
         print(f"[pipeline] fetcher: fetching {len(ranked_urls)} URLs in parallel")
 
-        def _fetch(url: str) -> tuple[str, dict]:
+        def _fetch(url: str) -> tuple[str, dict, float]:
+            t0 = time.monotonic()
             print(f"[web_fetch]  Fetching: {url}")
-            return url, call_web_fetch(url)
+            return url, call_web_fetch(url), t0
 
         FETCH_TIMEOUT = 15
         fetched_pages = []
-        with ThreadPoolExecutor(max_workers=len(ranked_urls)) as pool:
-            futures = {pool.submit(_fetch, u): u for u in ranked_urls}
-            for future in as_completed(futures, timeout=FETCH_TIMEOUT + 5):
-                url = futures[future]
+        pending = set(ranked_urls)
+        with self.rec.phase("fetcher", sub=self.sub, round=self._round, queries=len(ranked_urls)):
+            start = time.monotonic()
+            with ThreadPoolExecutor(max_workers=len(ranked_urls)) as pool:
+                futures = {pool.submit(_fetch, u): u for u in ranked_urls}
                 try:
-                    _, result = future.result(timeout=FETCH_TIMEOUT)
-                    if result and not result.get("error"):
-                        content = result.get("content", "") or result.get("text", "")
-                        fetched_pages.append({"url": url, "content": content[:4000]})
-                except Exception as e:
-                    print(f"[pipeline] fetcher: skipping {url} ({type(e).__name__}: {e})")
+                    for future in as_completed(futures, timeout=FETCH_TIMEOUT + 5):
+                        url = futures[future]
+                        pending.discard(url)
+                        try:
+                            _, result, t0 = future.result(timeout=FETCH_TIMEOUT)
+                            meta = result.pop("meta", None) or {}
+                            content = result.get("content", "") or result.get("text", "")
+                            ok = bool(result) and not result.get("error")
+                            self.rec.event("fetch", "fetcher", url, sub=self.sub, start=t0, ok=ok, error=result.get("error"),
+                                           source="ranked", round=self._round, kept_chars=min(len(content), 4000),
+                                           truncated=len(content) > 4000, **meta)
+                            if ok:
+                                fetched_pages.append({"url": url, "content": content[:4000]})
+                        except Exception as e:
+                            self.rec.event("fetch", "fetcher", url, sub=self.sub, start=start, ok=False,
+                                           error=f"{type(e).__name__}: {e}", source="ranked", round=self._round)
+                            print(f"[pipeline] fetcher: skipping {url} ({type(e).__name__}: {e})")
+                except FuturesTimeout:
+                    # Pages still loading after the deadline are dropped instead of failing the run.
+                    for url in pending:
+                        self.rec.event("fetch", "fetcher", url, sub=self.sub, start=start, ok=False,
+                                       error="timeout (fetch phase deadline)", source="ranked", round=self._round)
+                        print(f"[pipeline] fetcher: skipping {url} (fetch phase deadline)")
 
         if fetched_pages:
             self.research_buffer.append({"phase": "fetch", "content": fetched_pages})
@@ -549,20 +658,20 @@ class AgentPipeline:
         def _summarize(page: dict) -> Optional[dict]:
             url = page.get("url", "")
             content = page.get("content", "")
-            out = run_micro_agent(
-                self.client, self.session_id,
-                PROMPT_PAGE_SUMMARIZER.format(goal=goal, url=url),
-                content,
-                tools=[],
-                max_iterations=1,
-                cancel_event=self.cancel_event,
-            )
-            parsed = _parse_json_output(out, {"url": url, "relevant": False, "facts": []})
+            out = self._micro("page_summarizer", PROMPT_PAGE_SUMMARIZER.format(goal=goal, url=url), content)
+            raw = _parse_json_output(out, None)
+            parsed = raw if isinstance(raw, dict) else {"url": url, "relevant": False, "facts": []}
             parsed["url"] = url
+            facts = parsed.get("facts") or []
+            self.rec.event("decision", "page_summarizer", "page_summarizer", sub=self.sub, url=url,
+                           parsed_ok=isinstance(raw, dict), model_failed=out is None,
+                           relevant=bool(parsed.get("relevant")), facts=len(facts) if isinstance(facts, list) else None,
+                           input_chars=len(content))
             return parsed if parsed.get("relevant") and parsed.get("facts") else None
 
-        with ThreadPoolExecutor(max_workers=len(pages)) as pool:
-            results = list(pool.map(_summarize, pages))
+        with self.rec.phase("page_summarizer", sub=self.sub, round=self._round, pages=len(pages)):
+            with ThreadPoolExecutor(max_workers=len(pages)) as pool:
+                results = list(pool.map(_summarize, pages))
 
         summaries = [r for r in results if r]
         print(f"[pipeline] page-summarizer: {len(summaries)}/{len(pages)} pages relevant")
@@ -678,6 +787,8 @@ class MultiAgentPipeline:
         self.cancel_event = cancel_event
 
     def run(self, query: str) -> Optional[str]:
+        rec = metrics.get(self.session_id)
+        metrics.record_config(rec, self.config, MODEL)
         prior_lines: list[str] = []
         sub_results: dict[str, str] = {}
 
@@ -697,8 +808,9 @@ class MultiAgentPipeline:
                 validate_links=self.config.validate_links,
                 freshness=sq.freshness or self.config.freshness,
             )
-            sub_pipeline = AgentPipeline(self.client, self.session_id, sub_config, self.cancel_event)
-            result = sub_pipeline.run(resolved_goal)
+            sub_pipeline = AgentPipeline(self.client, self.session_id, sub_config, self.cancel_event, sub=sq.label)
+            with rec.phase("pipeline", sub=sq.label):
+                result = sub_pipeline.run(resolved_goal)
             print(f"[multi-pipeline] sub-pipeline done: {sq.label}")
             return sq.label, result
 
@@ -726,11 +838,16 @@ class MultiAgentPipeline:
         )
         agg_input = "\n\n".join(prior_lines + [labeled_parts])
 
-        return run_micro_agent(
-            self.client, self.session_id,
-            PROMPT_AGGREGATOR.format(output_template=self.config.output_template),
-            agg_input,
-            tools=[],
-            max_iterations=1,
-            cancel_event=self.cancel_event,
-        )
+        rec.event("aggregate_input", "aggregator", "aggregator", chars=len(agg_input),
+                  sub_results={label: len(r) for label, r in sub_results.items()},
+                  missing=[sq.label for sq in self.config.sub_queries if sq.label not in sub_results])
+        with rec.phase("aggregator"):
+            return run_micro_agent(
+                self.client, self.session_id,
+                PROMPT_AGGREGATOR.format(output_template=self.config.output_template),
+                agg_input,
+                tools=[],
+                max_iterations=1,
+                cancel_event=self.cancel_event,
+                phase="aggregator",
+            )

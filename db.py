@@ -75,6 +75,31 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             created_at     TEXT    NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS run_events (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id  INTEGER NOT NULL,
+            seq         INTEGER NOT NULL,
+            t_ms        INTEGER,
+            duration_ms INTEGER,
+            kind        TEXT    NOT NULL,
+            phase       TEXT,
+            sub         TEXT,
+            name        TEXT,
+            ok          INTEGER,
+            error       TEXT,
+            data        TEXT,
+            created_at  TEXT    NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS run_payloads (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id  INTEGER NOT NULL,
+            seq         INTEGER NOT NULL,
+            input       TEXT,
+            output      TEXT,
+            created_at  TEXT    NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS settings (
             key        TEXT PRIMARY KEY,
             value      TEXT,
@@ -123,7 +148,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             conn.commit()
         except sqlite3.OperationalError:
             pass  # column already exists
-    for col, typedef in [("agent", "TEXT"), ("source", "TEXT"), ("ended_at", "TEXT"), ("viewed_at", "TEXT"), ("logs", "TEXT"), ("cron_id", "INTEGER"), ("dispatch_id", "INTEGER")]:
+    for col, typedef in [("agent", "TEXT"), ("source", "TEXT"), ("ended_at", "TEXT"), ("viewed_at", "TEXT"), ("logs", "TEXT"), ("cron_id", "INTEGER"), ("dispatch_id", "INTEGER"), ("metrics", "TEXT")]:
         try:
             conn.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
             conn.commit()
@@ -153,6 +178,9 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_sessions_agent        ON sessions(agent);
         CREATE INDEX IF NOT EXISTS idx_sessions_started_at   ON sessions(started_at DESC);
         CREATE INDEX IF NOT EXISTS idx_messages_session_role ON messages(session_id, role);
+        CREATE INDEX IF NOT EXISTS idx_run_events_session    ON run_events(session_id, seq);
+        CREATE INDEX IF NOT EXISTS idx_run_payloads_session  ON run_payloads(session_id, seq);
+        CREATE INDEX IF NOT EXISTS idx_run_payloads_created  ON run_payloads(created_at);
     """)
     conn.commit()
 
@@ -282,7 +310,12 @@ def get_sessions(limit: int = 50, agent: Optional[str] = None) -> list[dict]:
                 WHEN s.ended_at IS NOT NULL
                 THEN CAST(ROUND((JULIANDAY(s.ended_at) - JULIANDAY(s.started_at)) * 86400000) AS INTEGER)
                 ELSE (SELECT COALESCE(SUM(duration_ms), 0) FROM tool_calls WHERE session_id = s.id)
-            END AS total_duration_ms
+            END AS total_duration_ms,
+            s.dispatch_id,
+            json_extract(s.metrics, '$.status')        AS run_status,
+            json_extract(s.metrics, '$.sources')       AS run_sources,
+            json_extract(s.metrics, '$.timing.run_ms') AS run_ms,
+            json_extract(s.metrics, '$.source')        AS metrics_source
         FROM sessions s
         {where}
         ORDER BY s.id DESC
@@ -297,6 +330,82 @@ def set_session_logs(session_id: int, logs: str) -> None:
     conn = _get_conn()
     conn.execute("UPDATE sessions SET logs = ? WHERE id = ?", (logs, session_id))
     conn.commit()
+
+
+# ── Run metrics ───────────────────────────────────────────────────────────────
+
+def insert_run_events(session_id: int, events: list[dict]) -> None:
+    if not events:
+        return
+    conn = _get_conn()
+    now = _now()
+    conn.executemany(
+        """INSERT INTO run_events (session_id, seq, t_ms, duration_ms, kind, phase, sub, name, ok, error, data, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        [(session_id, e["seq"], e["t_ms"], e["duration_ms"], e["kind"], e["phase"], e["sub"], e["name"],
+          int(bool(e["ok"])), e["error"], json.dumps(e["data"], ensure_ascii=False, default=str), now) for e in events],
+    )
+    conn.commit()
+
+
+def insert_run_payloads(session_id: int, payloads: list[dict]) -> None:
+    if not payloads:
+        return
+    conn = _get_conn()
+    now = _now()
+    conn.executemany(
+        "INSERT INTO run_payloads (session_id, seq, input, output, created_at) VALUES (?, ?, ?, ?, ?)",
+        [(session_id, p["seq"], p["input"], p["output"], now) for p in payloads],
+    )
+    conn.commit()
+
+
+def purge_run_payloads(days: int) -> None:
+    from datetime import timedelta
+    conn = _get_conn()
+    conn.execute("DELETE FROM run_payloads WHERE created_at < ?", ((datetime.now(timezone.utc) - timedelta(days=days)).isoformat(),))
+    conn.commit()
+
+
+def set_session_metrics(session_id: int, metrics: dict) -> None:
+    conn = _get_conn()
+    conn.execute("UPDATE sessions SET metrics = ? WHERE id = ?", (json.dumps(metrics, ensure_ascii=False, default=str), session_id))
+    conn.commit()
+
+
+def get_run_events(session_id: int) -> list[dict]:
+    conn = _get_conn()
+    rows = conn.execute(
+        """SELECT e.seq, e.t_ms, e.duration_ms, e.kind, e.phase, e.sub, e.name, e.ok, e.error, e.data,
+                  EXISTS(SELECT 1 FROM run_payloads p WHERE p.session_id = e.session_id AND p.seq = e.seq) AS has_payload
+           FROM run_events e WHERE e.session_id = ? ORDER BY e.seq""",
+        (session_id,),
+    ).fetchall()
+    return [{**dict(r), "ok": bool(r["ok"]), "has_payload": bool(r["has_payload"]), "data": json.loads(r["data"] or "{}")} for r in rows]
+
+
+def get_run_payload(session_id: int, seq: int) -> Optional[dict]:
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT seq, input, output, created_at FROM run_payloads WHERE session_id = ? AND seq = ?",
+        (session_id, seq),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def sessions_without_metrics() -> list[dict]:
+    conn = _get_conn()
+    rows = conn.execute("SELECT id FROM sessions WHERE metrics IS NULL AND ended_at IS NOT NULL ORDER BY id").fetchall()
+    return [dict(r) for r in rows]
+
+
+def sessions_with_metrics(since: str) -> list[dict]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT id, agent, source, dispatch_id, started_at, metrics FROM sessions WHERE metrics IS NOT NULL AND started_at >= ? ORDER BY started_at",
+        (since,),
+    ).fetchall()
+    return [{**dict(r), "metrics": json.loads(r["metrics"])} for r in rows]
 
 
 def get_session_detail(session_id: int) -> Optional[dict]:
@@ -314,6 +423,7 @@ def get_session_detail(session_id: int) -> Optional[dict]:
     ).fetchall()
     return {
         **dict(session),
+        "metrics": json.loads(session["metrics"]) if session["metrics"] else None,
         "messages": [dict(m) for m in messages],
         "tool_calls": [dict(t) for t in tool_calls],
     }

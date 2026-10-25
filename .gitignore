@@ -21,3 +21,6 @@ test.db-wal
 # python
 __pycache__/
 *.pyc
+
+# deploy stamp (commit of the staged code)
+BUILD
