@@ -30,6 +30,30 @@ class TeeStream:
         return self._buf.getvalue()
 
 
+# Log prefixes → short step names for the UI's running indicator (checked newest line first).
+_STEPS = [
+    ("[pipeline] planner", "planning"),
+    ("[pipeline] searcher", "searching"),
+    ("_search]", "searching"),
+    ("[pipeline] ranker", "ranking"),
+    ("[pipeline] fetcher", "fetching"),
+    ("[web_fetch]", "fetching"),
+    ("[pipeline] page-summarizer", "reading"),
+    ("[pipeline] link-validator", "checking links"),
+    ("[pipeline] validator", "checking"),
+    ("[pipeline] synthesizer", "writing"),
+    ("[agent]", "thinking"),
+]
+
+
+def _current_step(logs: str) -> Optional[str]:
+    for line in reversed(logs[-4000:].splitlines()):
+        for prefix, step in _STEPS:
+            if prefix in line:
+                return step
+    return None
+
+
 class JobManager:
     def __init__(self, client, scheduler):
         self.client = client
@@ -81,7 +105,11 @@ class JobManager:
                     "job_id": jid,
                     "status": j["status"],
                     "session_id": j["session_id"],
+                    "agent": j.get("agent"),
+                    "dispatch_id": j.get("dispatch_id"),
+                    "started_at": j["started_at"],
                     "queue_position": j.get("queue_position") if j["status"] == "queued" else None,
+                    "step": _current_step(j["tee"].getvalue()) if j["status"] == "running" and j.get("tee") else None,
                 }
                 for jid, j in self._jobs.items()
                 if j["status"] in ("queued", "running")
@@ -107,6 +135,8 @@ class JobManager:
         with self._lock:
             self._jobs[job_id] = {
                 "status": "queued",
+                "agent": agent_name,
+                "dispatch_id": getattr(body, "dispatch_id", None),
                 "queue_position": self._queue.qsize() + 1,
                 "session_id": session_id,
                 "result": None, "error": None,
@@ -157,6 +187,7 @@ class JobManager:
         with self._lock:
             self._jobs[job_id] = {
                 "status": "queued",
+                "agent": agent_name,
                 "dispatch_id": dispatch_id,
                 "queue_position": self._queue.qsize() + 1,
                 "session_id": session_id,
@@ -168,6 +199,8 @@ class JobManager:
         def _run():
             tee = TeeStream(sys.stdout, flush_cb=lambda logs: db.set_session_logs(session_id, logs))
             sys.stdout = tee
+            with self._lock:
+                self._jobs[job_id]["tee"] = tee
             _status, _result, _err = "error", None, None
             try:
                 pipeline = create_pipeline(self.client, session_id, self.pipeline_configs[agent_name], cancel_event)
@@ -183,6 +216,7 @@ class JobManager:
                 db.set_session_logs(session_id, tee.getvalue())
                 with self._lock:
                     self._jobs[job_id]["status"] = _status
+                    self._jobs[job_id].pop("tee", None)
                     if _status == "done":
                         self._jobs[job_id]["result"] = _result
                     elif _err:
@@ -219,6 +253,8 @@ class JobManager:
 
         tee = TeeStream(sys.stdout, flush_cb=lambda logs: db.set_session_logs(session_id, logs))
         sys.stdout = tee
+        with self._lock:
+            self._jobs[job_id]["tee"] = tee
         _status, _result, _err = "error", None, None
         try:
             query = next((m.content for m in reversed(body.messages) if m.role == "user"), "")
@@ -237,6 +273,7 @@ class JobManager:
             db.set_session_logs(session_id, tee.getvalue())
             with self._lock:
                 self._jobs[job_id]["status"] = _status
+                self._jobs[job_id].pop("tee", None)
                 if _status == "done":
                     self._jobs[job_id]["result"] = _result
                 elif _err:

@@ -354,6 +354,12 @@ body.theme-light .btn-primary { color: white !important; }
 }
 #run-drawer.open { display: block; }
 .drawer-bd { position: absolute; inset: 0; background: oklch(0 0 0 / 0.4); }
+/* Desktop: the drawer is a side panel; the rest of the page stays usable. */
+@media (min-width: 641px) {
+  #run-drawer { pointer-events: none; }
+  #run-drawer .drawer-bd { display: none; }
+  .run-drawer-panel { pointer-events: auto; }
+}
 .run-drawer-panel {
   position: absolute; top: 0; right: 0; bottom: 0; width: 480px;
   background: var(--panel); border-left: 1px solid var(--line);
@@ -430,6 +436,25 @@ details[open] .adv-chevron { transform: rotate(0deg); }
   font-family: var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase;
 }
 .qbadge.running { background: var(--warn); color: oklch(0.18 0.05 75); }
+
+/* ── Running indicators ── */
+@keyframes run-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.run-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); animation: run-pulse 1.4s ease-in-out infinite; flex-shrink: 0; }
+.run-pill {
+  display: inline-flex; align-items: center; gap: 7px; max-width: 320px;
+  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--bg-3); color: var(--fg-2); cursor: pointer;
+  font-family: var(--font-mono); font-size: 11px; white-space: nowrap;
+}
+.run-pill:hover { color: var(--fg); }
+.run-pill[hidden] { display: none; }
+.run-pill .run-pill-text { overflow: hidden; text-overflow: ellipsis; }
+#run-pill-m { max-width: 110px; padding: 4px 8px; }
+.run-status { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.mob-tab-btn { position: relative; }
+.mob-tab-btn .run-dot { position: absolute; top: 4px; left: calc(50% + 8px); }
+#toast.has-action { pointer-events: auto; display: flex; align-items: center; gap: 10px; }
+#toast .toast-action { background: none; border: none; padding: 0; color: var(--link); cursor: pointer; font: inherit; font-weight: 600; }
 
 /* ── Markdown ── */
 .md h1,.md h2,.md h3,.md h4 { color: var(--fg); font-weight: 700; margin: 1em 0 0.4em; line-height: 1.3; }
@@ -599,6 +624,7 @@ details.log-section summary::-webkit-details-marker { display: none; }
         <h1 class="mob-title" id="mob-title">Digest<span class="cnt" id="mob-count"></span></h1>
       </div>
       <div style="display:flex;align-items:center;gap:6px">
+        <button class="run-pill" id="run-pill-m" hidden onclick="openRunPill()"></button>
         <button class="btn btn-ghost btn-sm" onclick="openSettingsSheet()" title="Settings">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
@@ -625,6 +651,7 @@ details.log-section summary::-webkit-details-marker { display: none; }
           <div class="topbar-meta" id="topbar-meta"></div>
         </div>
         <div class="topbar-actions">
+          <button class="run-pill" id="run-pill" hidden onclick="openRunPill()"></button>
           <button class="btn btn-ghost btn-sm" onclick="refreshAll()" title="Refresh">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 20 11 15 11"/><path d="M20 11A8 8 0 1 0 18 16.5"/></svg>
           </button>
@@ -669,6 +696,7 @@ details.log-section summary::-webkit-details-marker { display: none; }
       <button class="mob-tab-btn" id="mtab-runs" onclick="setMobileTab('runs')">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 13 16 15"/></svg>
         <span>Runs</span>
+        <i class="run-dot" id="mtab-runs-dot" hidden></i>
       </button>
     </nav>
   </main>
@@ -792,14 +820,10 @@ let digestOpenCards = new Set(); // ids of open digest cards
 let digestSeenCards = new Set(); // ids of cards that have been initialized (default open)
 
 let runDrawerSessionId = null;
-let activeJobId = null;
-let pendingJobId = null;
-let runningSessionId = null;
-let pendingSessionId = null;
-const queuedSessions = new Set();
-let pollTimer = null;
-let elapsedTimer = null;
-let elapsedSecs = 0;
+// Queued/running jobs from /api/jobs/active, by job_id: {job_id, status, session_id, agent, dispatch_id, started_at, queue_position, step}
+let activeJobs = new Map();
+let jobsTimer = null;   // polls /api/jobs/active: 3s while anything is active, else 30s
+let tickTimer = null;   // 1s elapsed-time ticker while anything is active
 let refreshTimer = null;
 
 // AgentSheet state
@@ -1027,13 +1051,22 @@ function shortArg(argsJson) {
 
 // ── Toast ──
 let toastTimer = null;
-function setStatus(msg) {
+let toastActionFn = null;
+// action: optional { label, fn } shown as a button in the toast
+function setStatus(msg, action) {
   const t = document.getElementById('toast');
-  t.textContent = msg;
+  toastActionFn = action?.fn || null;
+  t.classList.toggle('has-action', !!action);
+  t.innerHTML = esc(msg) + (action ? ` <button class="toast-action" onclick="runToastAction()">${esc(action.label)}</button>` : '');
   t.classList.add('show');
   clearTimeout(toastTimer);
-  if (msg) toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+  if (msg) toastTimer = setTimeout(() => t.classList.remove('show'), action ? 8000 : 3000);
   else t.classList.remove('show');
+}
+function runToastAction() {
+  const fn = toastActionFn;
+  document.getElementById('toast').classList.remove('show');
+  if (fn) fn();
 }
 
 // ── Theme ──
@@ -1093,7 +1126,9 @@ function updateModeBtns() {
   const iconBolt = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="none"><polygon points="13 2 4 14 11 14 10 22 20 10 13 10 13 2" fill="currentColor"/></svg>`;
   const iconClock = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 13 16 15"/></svg>`;
   document.getElementById('mode-agents').innerHTML = `${iconBolt} Agents <span class="cnt">${activeCrons.length}</span>`;
-  document.getElementById('mode-runs').innerHTML = `${iconClock} Runs <span class="cnt">${allSessions.length}</span>`;
+  const nActive = activeJobs.size;
+  document.getElementById('mode-runs').innerHTML = `${iconClock} Runs <span class="cnt">${allSessions.length}</span>` +
+    (nActive ? ` <i class="run-dot" title="${nActive} active"></i>` : '');
 }
 
 function renderSidebar() {
@@ -1122,11 +1157,9 @@ function renderSidebarList() {
     if (!items.length) { list.innerHTML = `<div style="padding:24px;text-align:center;color:var(--fg-3);font-size:12px">No runs yet</div>`; return; }
     list.innerHTML = items.map(s => {
       const isActive = runDrawerSessionId === s.id;
-      const isRunning = s.id === runningSessionId;
-      const isQueued = queuedSessions.has(s.id);
-      const runBadge = isRunning ? `<span class="qbadge running">running</span>` : isQueued ? `<span class="qbadge">queued</span>` : '';
+      const runBadge = `<span class="run-status" data-session="${s.id}">${runStatusHTML(s.id)}</span>`;
       return `<button class="sb-item${isActive ? ' active' : ''}${!s.viewed ? ' unread' : ''}" onclick="openRunDrawer(${s.id})">
-        <div class="sb-item-row">${pillHTML(s.agent)} ${runBadge} <span class="meta-mono" style="margin-left:auto;font-size:10.5px">${esc(fmtTime(s.started_at))}</span>${s.total_duration_ms > 0 ? `<span class="meta-mono" style="font-size:10.5px;color:var(--fg-4)">${fmtDuration(s.total_duration_ms)}</span>` : ''}</div>
+        <div class="sb-item-row">${pillHTML(s.agent)} ${runBadge} ${jobForSession(s.id) ? '' : `<span class="meta-mono" style="margin-left:auto;font-size:10.5px">${esc(fmtTime(s.started_at))}</span>`}${s.total_duration_ms > 0 ? `<span class="meta-mono" style="font-size:10.5px;color:var(--fg-4)">${fmtDuration(s.total_duration_ms)}</span>` : ''}</div>
         <div class="sb-item-prompt">${esc(s.prompt || '—')}</div>
       </button>`;
     }).join('');
@@ -1410,6 +1443,7 @@ function renderMobileRuns() {
     <button style="background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;text-align:left;cursor:pointer;color:var(--fg);display:block;width:100%" onclick="openRunDrawer(${s.id})">
       <div style="display:flex;align-items:center;gap:6px">
         ${pillHTML(s.agent)}
+        <span class="run-status" data-session="${s.id}">${runStatusHTML(s.id)}</span>
         <span class="meta-mono" style="margin-left:auto;font-size:10.5px">${esc(fmtTime(s.started_at))}</span>
         ${s.total_duration_ms > 0 ? `<span class="meta-mono" style="font-size:10.5px;color:var(--fg-4)">${fmtDuration(s.total_duration_ms)}</span>` : ''}
       </div>
@@ -1428,6 +1462,7 @@ async function openRunDrawer(sessionId) {
 
   document.getElementById('run-drawer-hdr').innerHTML = `<span class="meta-mono" style="font-size:11px">Loading…</span>`;
   document.getElementById('run-drawer-body').innerHTML = '';
+  document.getElementById('run-drawer-body').dataset.session = '';
   document.getElementById('run-drawer-ftr').innerHTML = '';
 
   try {
@@ -1448,9 +1483,10 @@ function renderRunDrawer(s) {
   const errorMsg = s.messages.find(m => m.role === 'error');
   const totalDuration = s.tool_calls.reduce((a, t) => a + (t.duration_ms || 0), 0);
 
-  const isRunning = !!(activeJobId && s.id === runningSessionId);
-  const stopBtn = isRunning
-    ? `<span id="rd-elapsed" class="meta-mono" style="margin-right:8px">${elapsedSecs}s</span><button onclick="cancelJob()" style="padding:3px 10px;background:var(--danger);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:var(--font-mono);font-size:11px">Stop</button>`
+  const job = jobForSession(s.id);
+  const isRunning = !!job;
+  const stopBtn = job
+    ? `<span class="run-status" data-session="${s.id}" style="margin-right:8px">${runStatusHTML(s.id)}</span><button onclick="cancelJob('${job.job_id}')" style="padding:3px 10px;background:var(--danger);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:var(--font-mono);font-size:11px">Stop</button>`
     : '';
 
   document.getElementById('run-drawer-hdr').innerHTML = `
@@ -1500,10 +1536,22 @@ function renderRunDrawer(s) {
     </details>`;
   }
 
-  document.getElementById('run-drawer-body').innerHTML = body;
-  if (isRunning) {
-    const pre = document.getElementById('rd-log-pre');
-    if (pre) pre.scrollTop = pre.scrollHeight;
+  const bodyEl = document.getElementById('run-drawer-body');
+  const sameRun = bodyEl.dataset.session === String(s.id);
+  const prevScroll = bodyEl.scrollTop;
+  const prevPre = document.getElementById('rd-log-pre');
+  const logFollow = !prevPre || prevPre.scrollTop + prevPre.clientHeight >= prevPre.scrollHeight - 8;
+  const openDetails = sameRun ? [...bodyEl.querySelectorAll('details')].map(d => d.open) : null;
+  bodyEl.innerHTML = body;
+  bodyEl.dataset.session = String(s.id);
+  if (sameRun) {
+    bodyEl.querySelectorAll('details').forEach((d, i) => { if (openDetails[i] !== undefined) d.open = openDetails[i]; });
+    bodyEl.scrollTop = prevScroll;
+  }
+  const pre = document.getElementById('rd-log-pre');
+  if (pre && isRunning) {
+    if (logFollow) pre.scrollTop = pre.scrollHeight;
+    else if (prevPre) pre.scrollTop = prevPre.scrollTop;
   }
 
   const playIcon = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="none"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor"/></svg>`;
@@ -1532,11 +1580,8 @@ async function rerunSession(sessionId) {
       body: JSON.stringify({ agent: s.agent, messages: [{ role: 'user', content: userMsg.content }] })
     });
     if (!res.ok) { setStatus('error'); return; }
-    const { job_id, session_id } = await res.json();
-    if (session_id) { queuedSessions.add(session_id); await loadSessions(); openRunDrawer(session_id); }
-    startPolling(job_id);
-    startElapsed();
-    setStatus('running…');
+    const { session_id } = await res.json();
+    await jobStarted(session_id, s.agent);
   } catch { setStatus('failed'); }
 }
 
@@ -1573,7 +1618,7 @@ async function openRunInMain(sessionId) {
 
 function renderSessionFull(s) {
   const el = document.getElementById('content');
-  const isRunning = s.id === runningSessionId;
+  const isRunning = !!jobForSession(s.id);
   let body = '';
   if (s.content) {
     body += `<div class="md" style="font-size:14px;line-height:1.7;color:var(--fg-2);margin-bottom:24px">${marked.parse(s.content)}</div>`;
@@ -1827,20 +1872,9 @@ async function archiveDispatchFromSheet() {
 async function loadSessions() {
   const agent = activeFilter === 'all' ? '' : `&agent=${activeFilter}`;
   try {
-    const [sr, jr] = await Promise.all([
-      fetch(`/api/sessions?limit=100${agent}`, { headers: headers() }),
-      fetch('/api/jobs/active', { headers: headers() }),
-    ]);
+    const sr = await fetch(`/api/sessions?limit=100${agent}`, { headers: headers() });
     if (!sr.ok) return;
     allSessions = await sr.json();
-    if (jr.ok) {
-      const activeJobs = await jr.json();
-      queuedSessions.clear();
-      for (const job of activeJobs) {
-        if (job.status === 'queued' || job.status === 'running') queuedSessions.add(job.session_id);
-        if (activeJobId !== job.job_id) startPolling(job.job_id);
-      }
-    }
     renderSidebar();
     if (mobileTab === 'runs') renderMobileContent();
   } catch {}
@@ -1895,81 +1929,133 @@ async function runDispatchNow(id) {
     body: JSON.stringify({ agent: cron.agent, messages: [{ role: 'user', content: cron.prompt }], dispatch_id: id }),
   });
   if (!res.ok) { setStatus('error'); return; }
-  const { job_id, session_id } = await res.json();
-  if (session_id) { queuedSessions.add(session_id); await loadSessions(); openRunDrawer(session_id); }
-  startPolling(job_id);
-  startElapsed();
-  setStatus('running…');
+  const { session_id } = await res.json();
+  await jobStarted(session_id, cron.agent);
 }
 
-// ── Job polling ──
-function stopPolling() {
-  clearInterval(pollTimer); pollTimer = null;
-  stopElapsed();
-  if (runningSessionId) queuedSessions.delete(runningSessionId);
-  activeJobId = null; runningSessionId = null;
-  const next = pendingJobId; pendingJobId = null; pendingSessionId = null;
-  if (next) startPolling(next);
+// ── Job tracking ──
+// One poll of /api/jobs/active drives every running indicator; nothing opens on its own.
+function jobForSession(sessionId) {
+  for (const j of activeJobs.values()) if (j.session_id === sessionId) return j;
+  return null;
 }
 
-function startPolling(job_id) {
-  if (activeJobId === job_id) return;
-  if (activeJobId) { pendingJobId = job_id; return; }
-  activeJobId = job_id;
-  if (!elapsedTimer) startElapsed();
-  let shownSessionId = null;
-
-  pollTimer = setInterval(async () => {
-    try {
-      const r = await fetch(`/api/jobs/${job_id}`, { headers: headers() });
-      if (!r.ok) return;
-      const job = await r.json();
-      if (job.session_id && job.session_id !== shownSessionId) {
-        shownSessionId = job.session_id;
-        runningSessionId = job.session_id;
-        await loadSessions();
-        if (!runDrawerSessionId) openRunDrawer(job.session_id);
-      }
-      if (runDrawerSessionId === job.session_id) {
-        const sr = await fetch(`/api/sessions/${job.session_id}`, { headers: headers() });
-        if (sr.ok) renderRunDrawer(await sr.json());
-      }
-      if (job.status === 'queued') {
-        const pos = job.queue_position ? ` (#${job.queue_position})` : '';
-        setStatus(`queued${pos}…`);
-      }
-      if (job.status === 'running' && job.session_id && queuedSessions.has(job.session_id)) {
-        queuedSessions.delete(job.session_id); await loadSessions();
-      }
-      if (job.status !== 'running' && job.status !== 'queued') {
-        stopPolling();
-        setStatus(job.status === 'done' ? 'done ✓' : job.status);
-        await loadSessions();
-        await loadDigest();
-        if (dispatchTab === 'digest' || mobileTab === 'digest') renderDispatch();
-      }
-    } catch {}
-  }, 2000);
+function jobName(j) {
+  const d = j.dispatch_id && allDispatches.find(x => x.id === j.dispatch_id);
+  if (d) return dispatchLabel(d, 32);
+  return allAgents.find(a => a.name === j.agent)?.label || j.agent || 'run';
 }
 
-function startElapsed() {
-  elapsedSecs = 0;
-  elapsedTimer = setInterval(() => {
-    elapsedSecs++;
-    const el = document.getElementById('rd-elapsed');
-    if (el) el.textContent = `${elapsedSecs}s`;
-  }, 1000);
+function fmtElapsed(iso) {
+  const secs = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
+  return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, '0')}s`;
 }
 
-function stopElapsed() { clearInterval(elapsedTimer); elapsedTimer = null; }
+function runStatusHTML(sessionId) {
+  const j = jobForSession(sessionId);
+  if (!j) return '';
+  if (j.status === 'queued') return `<span class="qbadge">queued${j.queue_position ? ' #' + j.queue_position : ''}</span>`;
+  return `<span class="qbadge running">${esc(j.step || 'running')}</span><span class="meta-mono" style="font-size:10.5px">${fmtElapsed(j.started_at)}</span>`;
+}
 
-async function cancelJob() {
-  if (!activeJobId) return;
-  const jid = activeJobId;
-  await fetch(`/api/jobs/${jid}`, { method: 'DELETE', headers: headers() });
-  stopPolling();
-  setStatus('cancelled');
+function renderRunIndicators() {
+  const jobs = [...activeJobs.values()];
+  const running = jobs.filter(j => j.status === 'running');
+  const queued = jobs.length - running.length;
+  let text = '';
+  if (jobs.length === 1) {
+    const j = jobs[0];
+    text = j.status === 'queued' ? `${jobName(j)} · queued` : `${jobName(j)} · ${j.step || 'running'} · ${fmtElapsed(j.started_at)}`;
+  } else if (jobs.length > 1) {
+    text = `${running.length} running${queued ? ` · ${queued} queued` : ''}`;
+  }
+  // The mobile header has little room: step (one job) or count only.
+  const shortText = jobs.length === 1 ? (jobs[0].status === 'queued' ? 'queued' : (jobs[0].step || 'running')) : String(jobs.length);
+  for (const [id, label] of [['run-pill', text], ['run-pill-m', shortText]]) {
+    const pill = document.getElementById(id);
+    if (!pill) continue;
+    pill.hidden = !jobs.length;
+    pill.innerHTML = jobs.length ? `<i class="run-dot"></i><span class="run-pill-text">${esc(label)}</span>` : '';
+    pill.title = jobs.map(j => `${jobName(j)}: ${j.status === 'queued' ? 'queued' : (j.step || 'running')}`).join('\n');
+  }
+  const mdot = document.getElementById('mtab-runs-dot');
+  if (mdot) mdot.hidden = !jobs.length;
+  document.querySelectorAll('.run-status[data-session]').forEach(el => {
+    el.innerHTML = runStatusHTML(+el.dataset.session);
+  });
+}
+
+function openRunPill() {
+  if (activeJobs.size === 1) { openRunDrawer([...activeJobs.values()][0].session_id); return; }
+  if (isMobile()) setMobileTab('runs');
+  else setSidebarMode('runs');
+}
+
+async function pollJobs() {
+  clearTimeout(jobsTimer);
+  try {
+    const r = await fetch('/api/jobs/active', { headers: headers() });
+    if (r.ok) {
+      const prev = activeJobs;
+      activeJobs = new Map((await r.json()).filter(j => j.session_id).map(j => [j.job_id, j]));
+      const finished = [...prev.values()].filter(j => !activeJobs.has(j.job_id));
+      const changed = finished.length || [...activeJobs.values()].some(j => prev.get(j.job_id)?.status !== j.status);
+      if (finished.length) await jobsFinished(finished);
+      else if (changed) await loadSessions();
+      updateModeBtns();
+      renderRunIndicators();
+      await refreshOpenRun();
+    }
+  } catch {}
+  if (activeJobs.size && !tickTimer) tickTimer = setInterval(renderRunIndicators, 1000);
+  if (!activeJobs.size && tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+  jobsTimer = setTimeout(pollJobs, activeJobs.size ? 3000 : 30000);
+}
+
+// Keep an open drawer on an active (or just-finished) run up to date without resetting scroll.
+let refreshedFinishedSession = null;
+async function refreshOpenRun() {
+  const id = runDrawerSessionId;
+  if (!id || !document.getElementById('run-drawer').classList.contains('open')) return;
+  const active = !!jobForSession(id);
+  if (!active && refreshedFinishedSession === id) return;
+  refreshedFinishedSession = active ? null : id;
+  try {
+    const r = await fetch(`/api/sessions/${id}`, { headers: headers() });
+    if (r.ok && runDrawerSessionId === id) renderRunDrawer(await r.json());
+  } catch {}
+}
+
+async function jobsFinished(jobs) {
+  await Promise.all([loadSessions(), loadDigest(), loadDispatches()]);
+  if (dispatchTab === 'digest' || mobileTab === 'digest') renderDispatch();
+  if (jobs.some(j => j.session_id === runDrawerSessionId)) refreshedFinishedSession = null;
+  if (jobs.length > 1) {
+    setStatus(`${jobs.length} runs finished`, { label: 'View', fn: () => isMobile() ? setMobileTab('runs') : setSidebarMode('runs') });
+    return;
+  }
+  const j = jobs[0];
+  let status = 'done';
+  try {
+    const r = await fetch(`/api/jobs/${j.job_id}`, { headers: headers() });
+    if (r.ok) status = (await r.json()).status;
+  } catch {}
+  const msg = status === 'done' ? `${jobName(j)} finished ✓` : `${jobName(j)} ${status}`;
+  setStatus(msg, { label: 'View', fn: () => openRunDrawer(j.session_id) });
+}
+
+async function jobStarted(sessionId, agent) {
+  await pollJobs();
   await loadSessions();
+  const name = allAgents.find(a => a.name === agent)?.label || agent || 'Run';
+  setStatus(`${name} started`, sessionId ? { label: 'View', fn: () => openRunDrawer(sessionId) } : undefined);
+}
+
+async function cancelJob(jobId) {
+  if (!jobId) return;
+  await fetch(`/api/jobs/${jobId}`, { method: 'DELETE', headers: headers() });
+  setStatus('cancelled');
+  await pollJobs();
 }
 
 // ── Agent Library ──
@@ -2469,6 +2555,10 @@ async function saveSettings() {
   `;
 }
 
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('run-drawer').classList.contains('open')) closeRunDrawer();
+});
+
 // ── Init ──
 (function init() {
   const saved = localStorage.getItem('dispatch-theme');
@@ -2481,6 +2571,7 @@ async function saveSettings() {
   });
 
   refreshTimer = setInterval(() => { loadSessions(); loadDispatches(); loadDigest(); }, 30000);
+  pollJobs();
 })();
 
 </script>
