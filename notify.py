@@ -15,6 +15,7 @@ _SUMMARY_PROMPT = (
 
 def summarize(client, result: str) -> str:
     from providers import FAST_MODEL, MODEL
+    from pipeline import NUM_CTX
     model = FAST_MODEL or MODEL
     try:
         resp = client.chat(
@@ -25,8 +26,7 @@ def summarize(client, result: str) -> str:
             tools=[],
             temperature=0,
             max_tokens=120,
-            num_ctx=4096,
-            keep_alive=0,
+            num_ctx=NUM_CTX,  # same as the pipeline: a different num_ctx makes Ollama reload the model
         )
         text = (resp.message.content or "").strip()
         return text if text else result[:300]
