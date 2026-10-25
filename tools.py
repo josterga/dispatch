@@ -124,6 +124,28 @@ def _brave_search(query: str, freshness: Optional[str] = None) -> tuple[Optional
         return None, str(e)
 
 
+_SEARXNG_TIME_RANGE = {"d": "day", "w": "week", "m": "month", "y": "year"}
+
+
+def _searxng_search(query: str, freshness: Optional[str] = None) -> tuple[Optional[list], Optional[str]]:
+    searxng_url = os.getenv("SEARXNG_URL", "").rstrip("/")
+    if not searxng_url:
+        return None, None
+    try:
+        params: dict = {"q": query, "format": "json"}
+        if freshness and freshness in _SEARXNG_TIME_RANGE:
+            params["time_range"] = _SEARXNG_TIME_RANGE[freshness]
+        r = requests.get(f"{searxng_url}/search", params=params, timeout=15)
+        r.raise_for_status()
+        hits = r.json().get("results", [])
+        results = [{"title": h.get("title", ""), "url": h.get("url", ""), "content": h.get("content", "")} for h in hits][:SEARCH_RESULTS_PER_PROVIDER]
+        print(f"[searxng_search] {len(results)} results")
+        return results, None
+    except Exception as e:
+        print(f"[searxng_search] ERROR: {e}")
+        return None, str(e)
+
+
 def _ddg_search(query: str, freshness: Optional[str] = None) -> tuple[Optional[list], Optional[str]]:
     try:
         kwargs: dict = {"max_results": SEARCH_RESULTS_PER_PROVIDER}
@@ -143,8 +165,9 @@ def call_web_search(query: str, freshness: Optional[str] = None) -> dict:
     print(f'[web_search] Searching for: "{query}"' + (f" [freshness={freshness}]" if freshness else ""))
     ollama_ready = time.time() >= _ollama_failure_until
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=5) as pool:
         futures = {
+            "searxng": pool.submit(_searxng_search, query, freshness),
             "ddg":   pool.submit(_ddg_search, query, freshness),
             "brave": pool.submit(_brave_search, query, freshness),
             "jina":  pool.submit(_jina_search, query, freshness),
@@ -153,13 +176,14 @@ def call_web_search(query: str, freshness: Optional[str] = None) -> dict:
             futures["ollama"] = pool.submit(_ollama_search, query)
 
     ollama_results, ollama_err = futures["ollama"].result() if "ollama" in futures else (None, None)
+    searxng_results, searxng_err = futures["searxng"].result()
     brave_results,  brave_err  = futures["brave"].result()
     jina_results,   jina_err   = futures["jina"].result()
     ddg_results,    ddg_err    = futures["ddg"].result()
 
     seen_urls = set()
     merged = []
-    for result in (ollama_results or []) + (brave_results or []) + (jina_results or []) + (ddg_results or []):
+    for result in (searxng_results or []) + (ollama_results or []) + (brave_results or []) + (jina_results or []) + (ddg_results or []):
         url = result.get("url", "")
         if url and url not in seen_urls:
             seen_urls.add(url)
@@ -168,9 +192,9 @@ def call_web_search(query: str, freshness: Optional[str] = None) -> dict:
     if not merged:
         return {"error": "All search providers failed"}
 
-    print(f"[web_search] {len(merged)} merged results (ollama={len(ollama_results or [])}, brave={len(brave_results or [])}, jina={len(jina_results or [])}, ddg={len(ddg_results or [])})")
+    print(f"[web_search] {len(merged)} merged results (searxng={len(searxng_results or [])}, ollama={len(ollama_results or [])}, brave={len(brave_results or [])}, jina={len(jina_results or [])}, ddg={len(ddg_results or [])})")
 
-    source_errors = {k: v for k, v in {"ollama": ollama_err, "brave": brave_err, "jina": jina_err, "ddg": ddg_err}.items() if v}
+    source_errors = {k: v for k, v in {"searxng": searxng_err, "ollama": ollama_err, "brave": brave_err, "jina": jina_err, "ddg": ddg_err}.items() if v}
     return {"results": merged, **({"source_errors": source_errors} if source_errors else {})}
 
 

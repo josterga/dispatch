@@ -2342,6 +2342,7 @@ async function loadSettings() {
           ${f('s-ollama-search', 'Ollama Cloud API key', inp('s-ollama-search', val('OLLAMA_API_KEY'), 'password'))}
           ${f('s-brave', 'Brave Search API key', inp('s-brave', val('BRAVE_API_KEY'), 'password'))}
           ${f('s-jina', 'Jina API key', inp('s-jina', val('JINA_API_KEY'), 'password'))}
+          ${f('s-searxng', 'SearXNG URL', inp('s-searxng', val('SEARXNG_URL'), 'text'))}
         </div>
       </div>
       <hr style="border:none;border-top:1px solid var(--line)">
@@ -2396,6 +2397,7 @@ async function saveSettings() {
     OLLAMA_API_KEY: document.getElementById('s-ollama-search')?.value?.trim() ?? '',
     BRAVE_API_KEY: document.getElementById('s-brave')?.value?.trim() ?? '',
     JINA_API_KEY: document.getElementById('s-jina')?.value?.trim() ?? '',
+    SEARXNG_URL: document.getElementById('s-searxng')?.value?.trim() ?? '',
     LOCATION: document.getElementById('s-location')?.value?.trim() ?? '',
     CONTEXT_BUDGET: document.getElementById('s-budget')?.value ?? 'cloud',
     TEMPERATURE: document.getElementById('s-temp')?.value?.trim() ?? '0.2',

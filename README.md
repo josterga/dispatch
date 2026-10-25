@@ -223,6 +223,7 @@ Web search fans out across multiple providers in parallel, merges and deduplicat
 | **Ollama Cloud** | `OLLAMA_API_KEY` | [ollama.com](https://ollama.com) | Recommended; primary fan-out provider |
 | **Brave Search** | `BRAVE_API_KEY` | 2K queries/month — [brave.com/search/api](https://brave.com/search/api/) | Good general coverage |
 | **Jina Search** | `JINA_API_KEY` | [jina.ai](https://jina.ai/) | Also enables Jina Reader for page fetching; `site:` queries excluded |
+| **SearXNG** | `SEARXNG_URL` | self-hosted, no quota | Your own instance (e.g. `http://127.0.0.1:8888`) with JSON format enabled; results ranked first |
 | **DuckDuckGo** | none | always-on | Baseline; 60s circuit-breaker, auto-recovers |
 
 Page fetching uses `requests` with automatic fallback to **Jina Reader** (`r.jina.ai`) when a page returns thin content — catches JavaScript-rendered shells transparently. Set `WEB_FETCH_PROVIDER=jina` to always use Jina.
@@ -254,6 +255,7 @@ Open the gear icon in the web UI to change these at any time. A server restart i
 | `FIREWORKS_API_KEY` | — | Required if `PROVIDER=fireworks` |
 | `BRAVE_API_KEY` | — | Brave Search — 2K queries/month free |
 | `JINA_API_KEY` | — | Jina Search + higher Reader rate limits |
+| `SEARXNG_URL` | unset | Self-hosted SearXNG base URL |
 | `LOCATION` | unset | City/region injected into planner prompt for location-aware searches |
 | `CONTEXT_BUDGET` | `cloud` | `cloud` / `local` / `minimal` — controls content truncation for local models |
 | `TEMPERATURE` | `0.2` | LLM sampling temperature |
