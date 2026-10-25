@@ -389,6 +389,7 @@ class AgentPipeline:
             return q, call_web_search(q, freshness=self.freshness)
 
         all_results = []
+        direct_pages: dict[str, str] = {}  # URL sources (Direct Fetch): kept whole, not trimmed like search snippets
         all_source_errors: dict[str, dict] = {}
         with ThreadPoolExecutor(max_workers=min(len(queries), 8)) as pool:
             futures = {pool.submit(_search, q): q for q in queries}
@@ -407,10 +408,17 @@ class AgentPipeline:
                             for r in (result.get("results") or [])
                         ]
                     else:
-                        content = result.get("content", "")
-                        trimmed = [{"title": q, "url": q, "content": content[:10000]}] if content else []
+                        if result.get("content"):
+                            direct_pages[q] = result["content"][:10000]
+                        continue
                     if trimmed:
                         all_results.append({"query": q, "results": trimmed})
+
+        if direct_pages:
+            # Own phase so _compact_buffer passes it through in full (search content gets cut to
+            # SYNTHESIZER_BUFFER_LIMIT, or dropped once a fetch phase exists); keep source order.
+            self.research_buffer.append({"phase": "direct", "content": [
+                {"url": q, "content": direct_pages[q]} for q in queries if q in direct_pages]})
 
         if all_results:
             entry: dict = {"phase": "search", "content": all_results}
