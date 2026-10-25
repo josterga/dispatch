@@ -896,50 +896,55 @@ function formatTime12(h, m) {
   return `${h12}:${String(mi).padStart(2,'0')} ${am ? 'AM' : 'PM'}`;
 }
 
-function localToUtcTime(hh, mm) {
-  const total = hh * 60 + mm + new Date().getTimezoneOffset();
-  return [(((total / 60) % 24) + 24) % 24 | 0, ((total % 60) + 60) % 60];
-}
-function utcToLocalTime(hh, mm) {
-  const total = hh * 60 + mm - new Date().getTimezoneOffset();
-  return [(((total / 60) % 24) + 24) % 24 | 0, ((total % 60) + 60) % 60];
-}
+// Cron schedules are wall-clock time in the dispatch's timezone; new ones use the browser's.
+const BROWSER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
-function humanizeCron(expr) {
+function humanizeCron(expr, tz) {
   if (!expr) return expr;
   const parts = expr.trim().split(/\s+/);
   if (parts.length !== 5) return expr;
   const [m, h, dom, mon, dow] = parts;
-  const [lh, lm] = (/^\d+$/.test(h) && /^\d+$/.test(m)) ? utcToLocalTime(+h, +m) : [h, m];
-  const time = formatTime12(lh, lm);
+  const time = formatTime12(h, m) + (tz && tz !== BROWSER_TZ ? ` (${tz})` : '');
   const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   if (dom === '*' && mon === '*' && dow === '*') return `Daily at ${time}`;
-  if (dom === '*' && mon === '*' && /^\d+$/.test(dow)) return `${DOW[+dow]}s at ${time}`;
+  if (dom === '*' && mon === '*' && /^\d+$/.test(dow)) return `${DOW[+dow % 7]} at ${time}`;
   if (dom === '*' && mon === '*' && dow.includes(',')) {
-    return dow.split(',').map(d => DOW[+d]).join('/') + ` at ${time}`;
+    return dow.split(',').map(d => DOW[+d % 7]).join('/') + ` at ${time}`;
   }
   if (dom === '*' && mon === '*' && dow.includes('-')) {
     const [a,b] = dow.split('-').map(Number);
-    return `${DOW[a]}–${DOW[b]} at ${time}`;
+    return `${DOW[a % 7]}–${DOW[b % 7]} at ${time}`;
   }
   return expr;
 }
 
-function nextRun(expr, now) {
+// Older versions saved humanizeCron text as the label when none was given; it goes stale when the schedule changes.
+function isAutoLabel(label) {
+  return !!label && /^(Daily at|(Sun|Mon|Tue|Wed|Thu|Fri|Sat)s? at|(Sun|Mon|Tue|Wed|Thu|Fri|Sat)s?[\/–])/.test(label);
+}
+
+// Unlabeled dispatches: the prompt, else the agent's name (the schedule is shown next to it already).
+function dispatchLabel(c, fallbackLen) {
+  if (c.label && !isAutoLabel(c.label)) return c.label;
+  if (!fallbackLen) return '';
+  return (c.prompt && truncate(c.prompt, fallbackLen)) || allAgents.find(a => a.name === c.agent)?.label || c.agent;
+}
+
+function nextRun(expr, now, tz) {
   if (!expr) return null;
+  if (tz && tz !== BROWSER_TZ) return null;
   now = now || new Date();
   const parts = expr.trim().split(/\s+/);
   if (parts.length !== 5) return null;
   const [mP, hP,,,dowP] = parts;
   const tgtM = +mP, tgtH = +hP;
   if (isNaN(tgtM) || isNaN(tgtH)) return null;
-  const [ltH, ltM] = utcToLocalTime(tgtH, tgtM);
   const dows = expandDow(dowP);
   for (let i = 0; i < 14; i++) {
     const d = new Date(now);
     d.setSeconds(0,0);
     d.setDate(d.getDate() + i);
-    d.setHours(ltH, ltM);
+    d.setHours(tgtH, tgtM);
     if (i === 0 && d <= now) continue;
     if (dows.has(d.getDay())) return d;
   }
@@ -967,10 +972,10 @@ function shortDate(d) {
   return `${DOW[d.getDay()]} ${formatTime12(d.getHours(), d.getMinutes())}`;
 }
 
-function nextRunCellHTML(cron) {
-  const next = nextRun(cron);
+function nextRunCellHTML(cron, tz) {
+  const next = nextRun(cron, null, tz);
   return `<div style="display:flex;flex-direction:column;gap:2px">
-    <span style="font-size:12.5px">${esc(humanizeCron(cron))}</span>
+    <span style="font-size:12.5px">${esc(humanizeCron(cron, tz))}</span>
     <span class="meta-mono" style="font-size:11px">${esc(shortDate(next))} · ${esc(relTime(next))}</span>
   </div>`;
 }
@@ -1104,11 +1109,11 @@ function renderSidebarList() {
     if (activeFilter !== 'all') items = items.filter(c => c.agent === activeFilter);
     if (!items.length) { list.innerHTML = `<div class="empty-state" style="padding:24px;text-align:center;color:var(--fg-3);font-size:12px">No active agents</div>`; return; }
     list.innerHTML = items.map(c => {
-      const label = c.label || truncate(c.prompt, 40);
+      const label = dispatchLabel(c, 40);
       return `<button class="sb-item" onclick="openAgentSheet(${c.id})">
         <div class="sb-item-row">${pillHTML(c.agent)}<span style="margin-left:auto" class="meta-mono" style="font-size:10.5px">${c.run_count} runs</span></div>
         <div class="sb-item-title">${esc(label)}</div>
-        <div class="sb-item-sub">${esc(humanizeCron(c.schedule))}</div>
+        <div class="sb-item-sub">${esc(humanizeCron(c.schedule, c.timezone))}</div>
       </button>`;
     }).join('');
   } else {
@@ -1132,7 +1137,8 @@ function renderSidebarList() {
 function updateTopbar() {
   const active = allDispatches.filter(c => c.enabled);
   const archived = allDispatches.filter(c => !c.enabled);
-  const nr = active.length ? relTime(nextRun(active[0]?.schedule)) : '';
+  const soonest = active.map(c => nextRun(c.schedule, null, c.timezone)).filter(Boolean).sort((a, b) => a - b)[0];
+  const nr = soonest ? relTime(soonest) : '';
   document.getElementById('topbar-meta').textContent =
     `${active.length} active${nr ? ' · next run ' + nr : ''}`;
   document.getElementById('tc-digest').textContent = digestItems.length || '';
@@ -1212,7 +1218,7 @@ function renderDigest() {
   let cards = sorted.map(({ dispatch: c, session: s }) => {
     const id = `dc-${c.id}`;
     const isOpen = digestOpenCards.has(id);
-    const label = c.label || truncate(c.prompt, 60);
+    const label = dispatchLabel(c, 60);
     const runs = c.max_runs ? `${c.run_count}/${c.max_runs}` : `${c.run_count}`;
     const when = s ? fmtRelTime(s.started_at) : '';
 
@@ -1291,10 +1297,10 @@ function renderDispatchesTable(dispatches, kind) {
          <button class="btn btn-ghost btn-sm" title="Archive" onclick="event.stopPropagation();toggleDispatch(${c.id},false)">${archIcon}</button>`
       : `<button class="btn btn-sm" onclick="event.stopPropagation();toggleDispatch(${c.id},true)">Enable</button>
          <button class="btn btn-ghost btn-sm btn-danger" title="Delete" onclick="event.stopPropagation();deleteDispatch(${c.id})">${trashIcon}</button>`;
-    const schedCell = kind === 'active' ? nextRunCellHTML(c.schedule) : `<span class="meta-mono">${esc(humanizeCron(c.schedule))}</span>`;
+    const schedCell = kind === 'active' ? nextRunCellHTML(c.schedule, c.timezone) : `<span class="meta-mono">${esc(humanizeCron(c.schedule, c.timezone))}</span>`;
     return `<tr onclick="openAgentSheet(${c.id})">
       <td>${pillHTML(c.agent)}</td>
-      <td><span style="font-weight:500">${esc(c.label || '')}</span></td>
+      <td><span style="font-weight:500">${esc(dispatchLabel(c))}</span></td>
       <td><span style="color:var(--fg-2);display:block;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.prompt)}</span></td>
       <td>${schedCell}</td>
       <td class="r"><span class="mono" style="color:var(--fg-2)">${runs}</span></td>
@@ -1362,12 +1368,12 @@ function renderMobileAgents() {
 
   const shown = mAgentsView === 'active' ? active : archived;
   const cards = shown.map(c => {
-    const label = c.label || truncate(c.prompt, 50);
+    const label = dispatchLabel(c, 50);
     const footer = mAgentsView === 'active'
       ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line);display:flex;align-items:center;gap:6px">
            <span style="color:var(--fg-3);flex-shrink:0">${clockIcon}</span>
-           <span style="font-size:12px;color:var(--fg-2)">${esc(humanizeCron(c.schedule))}</span>
-           <span class="meta-mono" style="font-size:10.5px;color:var(--fg-3)">· ${esc(relTime(nextRun(c.schedule)))}</span>
+           <span style="font-size:12px;color:var(--fg-2)">${esc(humanizeCron(c.schedule, c.timezone))}</span>
+           <span class="meta-mono" style="font-size:10.5px;color:var(--fg-3)">· ${esc(relTime(nextRun(c.schedule, null, c.timezone)))}</span>
            <div style="margin-left:auto;display:flex;gap:4px">
              <button class="btn btn-sm" title="Run now" onclick="event.stopPropagation();runDispatchNow(${c.id})">${playIcon}</button>
              <button class="btn btn-sm" onclick="event.stopPropagation();openAgentSheet(${c.id})">${editIcon}</button>
@@ -1623,7 +1629,7 @@ async function openAgentSheet(dispatchIdOrObj) {
   }
   sheetSchedMode = 'simple';
   sheetDays = [1,2,3,4,5];
-  sheetLabel = dispatch?.label || '';
+  sheetLabel = isAutoLabel(dispatch?.label) ? '' : (dispatch?.label || '');
   sheetPrompt = dispatch?.prompt || '';
 
   if (dispatch?.schedule && dispatch.trigger_type !== 'once') {
@@ -1632,15 +1638,14 @@ async function openAgentSheet(dispatchIdOrObj) {
     if (parts.length === 5) {
       const [mm, hh,,,dow] = parts;
       if (/^\d+$/.test(hh) && /^\d+$/.test(mm)) {
-        const [lhh, lmm] = utcToLocalTime(+hh, +mm);
-        sheetTime = `${String(lhh).padStart(2,'0')}:${String(lmm).padStart(2,'0')}`;
+        sheetTime = `${hh.padStart(2,'0')}:${mm.padStart(2,'0')}`;
       }
       const isHourly = dispatch.schedule === '0 * * * *';
       const isDaily = /^\d+ \d+ \* \* \*$/.test(dispatch.schedule);
-      const isWeekly = /^\d+ \d+ \* \* \d$/.test(dispatch.schedule);
+      const isWeekly = /^\d+ \d+ \* \* \d(,\d)*$/.test(dispatch.schedule);
       sheetFreq = isHourly ? 'hourly' : isDaily ? 'daily' : isWeekly ? 'weekly' : 'custom';
       if (sheetFreq === 'custom') { sheetSchedMode = 'custom'; sheetFreq = 'daily'; }
-      if (isWeekly) sheetDays = [+parts[4]];
+      if (isWeekly) sheetDays = parts[4].split(',').map(d => +d % 7);
     }
   } else {
     sheetScheduleStr = dispatch?.schedule || '0 8 * * *';
@@ -1766,13 +1771,12 @@ function sheetBuildSchedule() {
   if (sheetSchedMode === 'custom') return sheetScheduleStr;
   const [lhh, lmm] = sheetTime.split(':').map(Number);
   if (sheetFreq === 'hourly') return '0 * * * *';
-  const [uhh, umm] = localToUtcTime(lhh, lmm);
-  if (sheetFreq === 'daily') return `${umm} ${uhh} * * *`;
+  if (sheetFreq === 'daily') return `${lmm} ${lhh} * * *`;
   if (sheetFreq === 'weekly') {
     const dow = sheetDays.length ? sheetDays.sort().join(',') : '1';
-    return `${umm} ${uhh} * * ${dow}`;
+    return `${lmm} ${lhh} * * ${dow}`;
   }
-  return `${umm} ${uhh} * * *`;
+  return `${lmm} ${lhh} * * *`;
 }
 
 async function saveAgent() {
@@ -1786,8 +1790,9 @@ async function saveAgent() {
   const payload = {
     agent: sheetCat,
     prompt,
-    label: label || humanizeCron(schedule),
+    label,
     schedule,
+    timezone: BROWSER_TZ,
     trigger_type: 'cron',
     repeat_until: untilVal ? new Date(untilVal).toISOString() : null,
     max_runs: maxVal ? parseInt(maxVal) : null,

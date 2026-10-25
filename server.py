@@ -46,7 +46,7 @@ def _register_dispatch_job(dispatch: dict) -> None:
         run_at = datetime.fromisoformat(dispatch["schedule"])
         trigger = DateTrigger(run_date=run_at, timezone="UTC")
     else:
-        trigger = CronTrigger.from_crontab(dispatch["schedule"], timezone="UTC")
+        trigger = CronTrigger.from_crontab(dispatch["schedule"], timezone=dispatch.get("timezone") or "UTC")
     _scheduler.add_job(
         _jobs.run_scheduled,
         trigger,
@@ -109,6 +109,7 @@ class DispatchRequest(BaseModel):
     trigger_type: str = "cron"
     repeat_until: Optional[str] = None
     max_runs: Optional[int] = None
+    timezone: Optional[str] = None  # IANA zone the cron is written in (the browser's); default: server zone
 
 
 class DispatchPatch(BaseModel):
@@ -430,6 +431,7 @@ async def get_dispatches_digest(request: Request):
 @app.post("/api/dispatches")
 async def create_dispatch_route(request: Request, body: DispatchRequest):
     _check_auth(request)
+    tz = body.timezone or db.local_timezone()
     if body.trigger_type == "once":
         try:
             datetime.fromisoformat(body.schedule)
@@ -437,12 +439,13 @@ async def create_dispatch_route(request: Request, body: DispatchRequest):
             raise HTTPException(status_code=400, detail="Invalid datetime for once trigger")
     else:
         try:
-            CronTrigger.from_crontab(body.schedule, timezone="UTC")
+            CronTrigger.from_crontab(body.schedule, timezone=tz)
         except Exception:
-            raise HTTPException(status_code=400, detail="Invalid cron expression")
+            raise HTTPException(status_code=400, detail="Invalid cron expression or timezone")
     dispatch_id = db.create_dispatch(
         body.agent, body.prompt, body.schedule, body.label, body.run_on_create,
         trigger_type=body.trigger_type, repeat_until=body.repeat_until, max_runs=body.max_runs,
+        timezone_name=tz,
     )
     dispatch = next((d for d in db.get_dispatches() if d["id"] == dispatch_id), None)
     if dispatch:
@@ -458,6 +461,7 @@ async def create_dispatch_route(request: Request, body: DispatchRequest):
 @app.put("/api/dispatches/{dispatch_id}")
 async def update_dispatch_route(dispatch_id: int, request: Request, body: DispatchRequest):
     _check_auth(request)
+    tz = body.timezone or db.local_timezone()
     if body.trigger_type == "once":
         try:
             datetime.fromisoformat(body.schedule)
@@ -465,12 +469,13 @@ async def update_dispatch_route(dispatch_id: int, request: Request, body: Dispat
             raise HTTPException(status_code=400, detail="Invalid datetime for once trigger")
     else:
         try:
-            CronTrigger.from_crontab(body.schedule, timezone="UTC")
+            CronTrigger.from_crontab(body.schedule, timezone=tz)
         except Exception:
-            raise HTTPException(status_code=400, detail="Invalid cron expression")
+            raise HTTPException(status_code=400, detail="Invalid cron expression or timezone")
     db.update_dispatch(
         dispatch_id, body.agent, body.prompt, body.schedule, body.label,
         trigger_type=body.trigger_type, repeat_until=body.repeat_until, max_runs=body.max_runs,
+        timezone_name=tz,
     )
     try:
         _scheduler.remove_job(f"dispatch_{dispatch_id}")

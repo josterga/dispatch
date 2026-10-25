@@ -1,6 +1,7 @@
 import json
 import os
 import random
+import re
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -139,17 +140,73 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         ("repeat_until",  "TEXT"),
         ("max_runs",      "INTEGER"),
         ("run_count",     "INTEGER NOT NULL DEFAULT 0"),
+        ("timezone",      "TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE dispatches ADD COLUMN {col} {typedef}")
             conn.commit()
         except sqlite3.OperationalError:
             pass  # column already exists
+    _localize_legacy_schedules(conn)
+    _clear_auto_labels(conn)
     conn.executescript("""
         CREATE INDEX IF NOT EXISTS idx_sessions_agent        ON sessions(agent);
         CREATE INDEX IF NOT EXISTS idx_sessions_started_at   ON sessions(started_at DESC);
         CREATE INDEX IF NOT EXISTS idx_messages_session_role ON messages(session_id, role);
     """)
+    conn.commit()
+
+
+def local_timezone() -> str:
+    """IANA name for new schedules when the client sends none: DISPATCH_TZ, else the system zone, else UTC."""
+    tz = os.getenv("DISPATCH_TZ")
+    if tz:
+        return tz
+    path = os.path.realpath("/etc/localtime")
+    return path.split("zoneinfo/", 1)[1] if "zoneinfo/" in path else "UTC"
+
+
+def _localize_legacy_schedules(conn) -> None:
+    """Schedules saved before the timezone column were UTC cron. Rewrite the simple ones
+    (fixed minute/hour, any weekday set) into local wall-clock time; mark the rest UTC."""
+    from zoneinfo import ZoneInfo
+    tz = local_timezone()
+    offset = datetime.now(ZoneInfo(tz)).utcoffset()
+    offset_min = int(offset.total_seconds() // 60) if offset else 0
+    rows = conn.execute("SELECT id, schedule, trigger_type FROM dispatches WHERE timezone IS NULL").fetchall()
+    for row in rows:
+        new_schedule, new_tz = row["schedule"], "UTC"
+        parts = row["schedule"].split()
+        if row["trigger_type"] != "once" and len(parts) == 5 and tz != "UTC":
+            m, h, dom, mon, dow = parts
+            if m.isdigit() and h.isdigit() and dom == "*" and mon == "*":
+                total = int(h) * 60 + int(m) + offset_min
+                day_shift, minute = divmod(total, 24 * 60)
+                if dow == "*":
+                    days = "*"
+                else:
+                    try:
+                        utc_days = set()
+                        for chunk in dow.split(","):
+                            a, _, b = chunk.partition("-")
+                            utc_days.update(range(int(a), int(b or a) + 1))
+                        days = ",".join(str(d) for d in sorted({(d % 7 + day_shift) % 7 for d in utc_days}))
+                    except ValueError:
+                        days = None
+                if days is not None:
+                    new_schedule, new_tz = f"{minute % 60} {minute // 60} * * {days}", tz
+        conn.execute("UPDATE dispatches SET schedule=?, timezone=? WHERE id=?", (new_schedule, new_tz, row["id"]))
+    conn.commit()
+
+
+_AUTO_LABEL = re.compile(r"^(Daily at|(Sun|Mon|Tue|Wed|Thu|Fri|Sat)s? at|(Sun|Mon|Tue|Wed|Thu|Fri|Sat)s?[/–])")
+
+
+def _clear_auto_labels(conn) -> None:
+    """The UI used to save the schedule text as the label when none was given; clear those so it shows the live schedule."""
+    for row in conn.execute("SELECT id, label FROM dispatches").fetchall():
+        if _AUTO_LABEL.match(row["label"] or ""):
+            conn.execute("UPDATE dispatches SET label='' WHERE id=?", (row["id"],))
     conn.commit()
 
 
@@ -288,15 +345,16 @@ def create_dispatch(
     trigger_type: str = "cron",
     repeat_until: Optional[str] = None,
     max_runs: Optional[int] = None,
+    timezone_name: str = "UTC",
 ) -> int:
     conn = _get_conn()
     cur = conn.execute(
         """INSERT INTO dispatches
                (agent, prompt, schedule, label, enabled, run_on_create, created_at,
-                trigger_type, repeat_until, max_runs, run_count)
-           VALUES (?,?,?,?,1,?,?,?,?,?,0)""",
+                trigger_type, repeat_until, max_runs, run_count, timezone)
+           VALUES (?,?,?,?,1,?,?,?,?,?,0,?)""",
         (agent, prompt, schedule, label, int(run_on_create), _now(),
-         trigger_type, repeat_until, max_runs),
+         trigger_type, repeat_until, max_runs, timezone_name),
     )
     conn.commit()
     return cur.lastrowid
@@ -377,14 +435,15 @@ def update_dispatch(
     trigger_type: str = "cron",
     repeat_until: Optional[str] = None,
     max_runs: Optional[int] = None,
+    timezone_name: str = "UTC",
 ) -> None:
     conn = _get_conn()
     conn.execute(
         """UPDATE dispatches
            SET agent=?, prompt=?, schedule=?, label=?,
-               trigger_type=?, repeat_until=?, max_runs=?
+               trigger_type=?, repeat_until=?, max_runs=?, timezone=?
            WHERE id=?""",
-        (agent, prompt, schedule, label, trigger_type, repeat_until, max_runs, dispatch_id),
+        (agent, prompt, schedule, label, trigger_type, repeat_until, max_runs, timezone_name, dispatch_id),
     )
     conn.commit()
 
