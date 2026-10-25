@@ -179,14 +179,8 @@ def _resolve_config(body: ChatRequest) -> tuple[str, Optional[DomainConfig]]:
 @app.get("/")
 async def ui():
     ui_path = Path(__file__).parent / "ui.html"
-    html = ui_path.read_text()
-    if SERVER_API_KEY:
-        html = html.replace(
-            "</head>",
-            f"<script>window.__API_KEY__='{SERVER_API_KEY}'</script></head>",
-            1,
-        )
-    return HTMLResponse(html)
+    # The page never contains the API key; the UI asks for it once and keeps it in localStorage.
+    return HTMLResponse(ui_path.read_text())
 
 
 @app.get("/api/sessions")

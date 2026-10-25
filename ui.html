@@ -751,7 +751,32 @@ marked.use({
   }
 });
 
-const API_KEY = window.__API_KEY__ || '';
+// API key is entered once per browser and kept in localStorage (never embedded in the page).
+const API_KEY_STORAGE = 'dispatch-api-key';
+function loadApiKey() {
+  try { return localStorage.getItem(API_KEY_STORAGE) || ''; } catch { return ''; }
+}
+function askForApiKey() {
+  const key = (window.prompt('Dispatch API key (SERVER_API_KEY in .env):') || '').trim();
+  try {
+    if (key) localStorage.setItem(API_KEY_STORAGE, key);
+    else localStorage.removeItem(API_KEY_STORAGE);
+  } catch {}
+  return key;
+}
+let API_KEY = loadApiKey();
+
+// Any 401 from the API means the key is missing or wrong: ask once, then reload.
+const _fetch = window.fetch.bind(window);
+let _askingForKey = false;
+window.fetch = async (...args) => {
+  const res = await _fetch(...args);
+  if (res.status === 401 && !_askingForKey) {
+    _askingForKey = true;
+    if (askForApiKey()) location.reload();
+  }
+  return res;
+};
 
 // ── State ──
 let sidebarMode = 'agents'; // agents | runs
