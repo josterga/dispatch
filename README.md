@@ -216,7 +216,7 @@ Set `MODEL` for the primary model and optionally `FAST_MODEL` for a smaller mode
 
 ## Search providers
 
-Web search fans out across multiple providers in parallel, merges and deduplicates results. **DuckDuckGo works out of the box — no key required.** Add any of the following free-tier providers to expand coverage:
+Web search fans out across multiple providers in parallel, merges and deduplicates results. **DuckDuckGo works out of the box — no key required** (as a fallback when no other provider answers). Add any of the following free-tier providers to expand coverage:
 
 | Provider | Key | Free tier | Notes |
 |---|---|---|---|
@@ -224,7 +224,7 @@ Web search fans out across multiple providers in parallel, merges and deduplicat
 | **Brave Search** | `BRAVE_API_KEY` | 2K queries/month — [brave.com/search/api](https://brave.com/search/api/) | Good general coverage |
 | **Jina Search** | `JINA_API_KEY` | [jina.ai](https://jina.ai/) | Also enables Jina Reader for page fetching; `site:` queries excluded |
 | **SearXNG** | `SEARXNG_URL` | self-hosted, no quota | Your own instance (e.g. `http://127.0.0.1:8888`) with JSON format enabled; results ranked first |
-| **DuckDuckGo** | none | always-on | Baseline; 60s circuit-breaker, auto-recovers |
+| **DuckDuckGo** | none | fallback | Used only when every other provider returns nothing (scraping is often throttled) |
 
 Page fetching uses `requests` with automatic fallback to **Jina Reader** (`r.jina.ai`) when a page returns thin content — catches JavaScript-rendered shells transparently. Set `WEB_FETCH_PROVIDER=jina` to always use Jina.
 

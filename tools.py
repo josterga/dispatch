@@ -165,10 +165,9 @@ def call_web_search(query: str, freshness: Optional[str] = None) -> dict:
     print(f'[web_search] Searching for: "{query}"' + (f" [freshness={freshness}]" if freshness else ""))
     ollama_ready = time.time() >= _ollama_failure_until
 
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {
             "searxng": pool.submit(_searxng_search, query, freshness),
-            "ddg":   pool.submit(_ddg_search, query, freshness),
             "brave": pool.submit(_brave_search, query, freshness),
             "jina":  pool.submit(_jina_search, query, freshness),
         }
@@ -179,7 +178,11 @@ def call_web_search(query: str, freshness: Optional[str] = None) -> dict:
     searxng_results, searxng_err = futures["searxng"].result()
     brave_results,  brave_err  = futures["brave"].result()
     jina_results,   jina_err   = futures["jina"].result()
-    ddg_results,    ddg_err    = futures["ddg"].result()
+
+    # DuckDuckGo scraping is often throttled ("No results found"): only use it when nothing else answered.
+    ddg_results, ddg_err = None, None
+    if not (searxng_results or ollama_results or brave_results or jina_results):
+        ddg_results, ddg_err = _ddg_search(query, freshness)
 
     seen_urls = set()
     merged = []
