@@ -1692,13 +1692,13 @@ function renderSheetBody() {
         <input class="input mono-input" value="${esc(sheetTime)}" style="flex:0 0 100px" oninput="sheetSetTime(this.value)" type="time">
       </div>
       ${dayPicker}
-      <div class="meta-mono" style="font-size:11px">↳ schedule <span style="color:var(--fg-2)">${esc(sheetBuildSchedule())}</span></div>
+      <div class="meta-mono" style="font-size:11px">↳ schedule <span id="sheet-sched-preview" style="color:var(--fg-2)">${esc(sheetBuildSchedule())}</span></div>
       <div class="meta-mono" style="font-size:11px;color:var(--fg-3)">${Intl.DateTimeFormat().resolvedOptions().timeZone}</div>
     </div>`;
   } else {
     schedContent = `<div style="display:flex;flex-direction:column;gap:8px">
       <input class="input mono-input" value="${esc(sheetScheduleStr)}" oninput="sheetSetScheduleStr(this.value)" placeholder="0 8 * * *">
-      <div class="meta-mono" style="font-size:11px">↳ ${esc(humanizeCron(sheetScheduleStr))}</div>
+      <div class="meta-mono" style="font-size:11px">↳ <span id="sheet-cron-preview">${esc(humanizeCron(sheetScheduleStr))}</span></div>
     </div>`;
   }
 
@@ -1744,8 +1744,18 @@ function renderSheetBody() {
 function sheetSetCat(k) { sheetCat = k; renderSheetBody(); }
 function sheetSetSchedMode(m) { sheetSchedMode = m; renderSheetBody(); }
 function sheetSetFreq(v) { sheetFreq = v; renderSheetBody(); }
-function sheetSetTime(v) { sheetTime = v; renderSheetBody(); }
-function sheetSetScheduleStr(v) { sheetScheduleStr = v; renderSheetBody(); }
+// Typing in these inputs only updates the preview: re-rendering would replace the input mid-edit
+// (loses focus, and crashes Safari's native time picker).
+function sheetSetTime(v) {
+  sheetTime = v;
+  const el = document.getElementById('sheet-sched-preview');
+  if (el) el.textContent = sheetBuildSchedule();
+}
+function sheetSetScheduleStr(v) {
+  sheetScheduleStr = v;
+  const el = document.getElementById('sheet-cron-preview');
+  if (el) el.textContent = humanizeCron(sheetScheduleStr);
+}
 function sheetToggleDay(i) {
   if (sheetDays.includes(i)) sheetDays = sheetDays.filter(d => d !== i);
   else sheetDays = [...sheetDays, i].sort();
