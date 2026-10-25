@@ -256,9 +256,24 @@ def _jina_search(query: str, freshness: Optional[str] = None) -> tuple[Optional[
         return None, str(e)
 
 
+def _is_local_url(url: str) -> bool:
+    """localhost / private / link-local hosts: never hand these to Jina (external, can't reach them anyway)."""
+    import ipaddress
+    from urllib.parse import urlparse
+    host = (urlparse(url).hostname or "").lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_private or ip.is_loopback or ip.is_link_local
+
+
 def call_web_fetch(url: str) -> dict:
     print(f"[web_fetch]  Fetching: {url}")
-    if WEB_FETCH_PROVIDER == "jina":
+    local = _is_local_url(url)
+    if WEB_FETCH_PROVIDER == "jina" and not local:
         return _jina_fetch(url)
     try:
         r = requests.get(
@@ -268,13 +283,18 @@ def call_web_fetch(url: str) -> dict:
             allow_redirects=True,
         )
         r.raise_for_status()
-        if "json" in r.headers.get("content-type", ""):
+        ctype = r.headers.get("content-type", "")
+        if "json" in ctype:
             return {"content": r.text}
-        text = re.sub(r"<(script|style)[^>]*>.*?</(script|style)>", " ", r.text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r"<[^>]+>", " ", text)
-        text = re.sub(r"\s+", " ", text).strip()
+        if ctype.startswith("text/plain"):
+            # Keep line structure (e.g. the local intel inbox's item blocks).
+            text = r.text.strip()
+        else:
+            text = re.sub(r"<(script|style)[^>]*>.*?</(script|style)>", " ", r.text, flags=re.DOTALL | re.IGNORECASE)
+            text = re.sub(r"<[^>]+>", " ", text)
+            text = re.sub(r"\s+", " ", text).strip()
         print(f"[web_fetch]  content: {len(text)} chars, snippet: {text[:200]!r}")
-        if len(text) < JINA_FALLBACK_THRESHOLD:
+        if len(text) < JINA_FALLBACK_THRESHOLD and not local:
             return _jina_fetch(url)
         return {"content": text}
     except requests.exceptions.HTTPError as e:
