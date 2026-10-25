@@ -100,7 +100,6 @@ def run_agent(
                 temperature=TEMPERATURE,
                 max_tokens=num_predict,
                 num_ctx=num_ctx or NUM_CTX,
-                keep_alive=0,
             )
         except Exception as e:
             print(f"[agent] ERROR: model call failed ({type(e).__name__}): {e}")
@@ -152,7 +151,6 @@ def run_agent(
             tools=[],
             temperature=TEMPERATURE,
             num_ctx=num_ctx or NUM_CTX,
-            keep_alive=0,
         )
         final = resp.message.content
         if final:

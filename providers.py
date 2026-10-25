@@ -2,7 +2,7 @@ import json
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Union
 
 from dotenv import load_dotenv
 
@@ -12,6 +12,11 @@ PROVIDER = os.getenv("PROVIDER", "ollama")
 MODEL = os.getenv("MODEL", os.getenv("OLLAMA_MODEL", "qwen3"))
 FAST_MODEL = os.getenv("FAST_MODEL", os.getenv("OLLAMA_FAST_MODEL", ""))
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
+# How long Ollama keeps the model loaded after each request.
+# 0 = unload immediately (default), -1 = forever, "30m" = duration, "server" = use the server's OLLAMA_KEEP_ALIVE
+_keep_alive = os.getenv("KEEP_ALIVE", "0").strip()
+KEEP_ALIVE = None if _keep_alive in ("", "server") else int(_keep_alive) if _keep_alive.lstrip("-").isdigit() else _keep_alive
 
 
 # ── Normalized response types (mirror Ollama's response.message shape) ────────
@@ -81,7 +86,7 @@ class LLMClient:
         temperature: float = 0.2,
         max_tokens: Optional[int] = None,
         num_ctx: Optional[int] = None,   # Ollama only — ignored for cloud providers
-        keep_alive: int = 0,             # Ollama only — ignored for cloud providers
+        keep_alive: Optional[Union[int, str]] = KEEP_ALIVE,  # Ollama only — ignored for cloud providers
     ) -> NormalizedResponse:
         if self._provider == "ollama":
             return self._chat_ollama(model, messages, tools, temperature, max_tokens, num_ctx, keep_alive)

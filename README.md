@@ -266,6 +266,7 @@ Open the gear icon in the web UI to change these at any time. A server restart i
 | `OLLAMA_API_KEY` | — | Ollama Cloud search key — [ollama.com](https://ollama.com) |
 | `WEB_FETCH_PROVIDER` | `http` | `http` (raw fetch + Jina fallback) or `jina` (always use Jina Reader) |
 | `DISPATCH_DB_PATH` | `search_history.db` | SQLite path |
+| `KEEP_ALIVE` | `0` | How long Ollama keeps the model loaded after each call: `0` unload, `-1` forever, `30m`, or `server` to use the Ollama server's `OLLAMA_KEEP_ALIVE` |
 | `DISPATCH_AGENTS_DIR` | `./agents` | YAML seed files directory |
 | `PLANNER_QUERY_COUNT` | `5` | Global default for `planner_query_count` (overridden per-agent) |
 | `PARALLEL_SUB_PIPELINES` | `1` | Max parallel workers for multi-track pipelines; `0` = sequential |
