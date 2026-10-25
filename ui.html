@@ -589,6 +589,131 @@ details.log-section summary::-webkit-details-marker { display: none; }
 .new-dropdown-item:hover { background: var(--hover); }
 .new-dropdown-item + .new-dropdown-item { border-top: 1px solid var(--line); }
 .sheet-subtitle { margin: 3px 0 0; font-size: 12px; color: var(--fg-3); }
+
+/* ── Run metrics: status + chart colors ── */
+/* Status steps are fixed (never themed); phase colors are categorical slots 1-6, validated
+   for both surfaces (light slots 3-5 are under 3:1, so every chart has a legend + tooltip + table). */
+body {
+  --st-good: #0ca30c; --st-warn: #fab219; --st-crit: #d03b3b; --st-none: var(--fg-4);
+  --ph-1: #3987e5; --ph-2: #d95926; --ph-3: #199e70; --ph-4: #c98500; --ph-5: #d55181; --ph-6: #008300;
+  --grid: oklch(0.27 0.006 260); --axis: oklch(0.36 0.008 260);
+}
+body.theme-light {
+  --ph-1: #2a78d6; --ph-2: #eb6834; --ph-3: #1baf7a; --ph-4: #eda100; --ph-5: #e87ba4; --ph-6: #008300;
+  --grid: #e1e0d9; --axis: #c3c2b7;
+}
+.mchip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border-radius: 4px;
+  border: 1px solid var(--line); background: var(--bg-3); color: var(--fg-2);
+  font-family: var(--font-mono); font-size: 10.5px; white-space: nowrap; line-height: 1.4;
+}
+button.mchip { cursor: pointer; }
+button.mchip:hover { border-color: var(--line-2); color: var(--fg); }
+.mchip .st-ic { width: 7px; height: 7px; border-radius: 50%; background: var(--st-c); flex-shrink: 0; }
+.mchip.t-good { --st-c: var(--st-good); }
+.mchip.t-warn { --st-c: var(--st-warn); border-color: color-mix(in oklab, var(--st-warn) 45%, var(--line)); }
+.mchip.t-crit { --st-c: var(--st-crit); border-color: color-mix(in oklab, var(--st-crit) 45%, var(--line)); }
+.mchip.t-none { --st-c: var(--st-none); }
+.mchip.open { background: var(--panel-2); color: var(--fg); }
+
+/* Stats panel (run card) */
+.stats { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); margin-bottom: 18px; overflow: hidden; }
+.stats-sec { padding: 12px 14px; border-top: 1px solid var(--line); overflow-x: auto; }
+.stats-sec:first-child { border-top: none; }
+.stats-h { font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.stats-h .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--fg-4); margin-left: auto; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; min-width: 0; }
+.tile-l { font-size: 10.5px; color: var(--fg-3); }
+.tile-v { font-size: 15px; font-weight: 600; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile-s { font-family: var(--font-mono); font-size: 10px; color: var(--fg-3); margin-top: 2px; line-height: 1.35; }
+.mt { width: 100%; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.mt th { text-align: left; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.mt td { padding: 4px 6px; border-bottom: 1px solid var(--grid); color: var(--fg-2); vertical-align: top; }
+.mt th.r, .mt td.r { text-align: right; }
+.mt td.url { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 10.5px; }
+.mt tr:last-child td { border-bottom: none; }
+.mt .err { color: var(--danger); }
+.flag { display: inline-block; font-family: var(--font-mono); font-size: 9.5px; padding: 0 4px; border-radius: 3px; border: 1px solid var(--line-2); color: var(--fg-2); margin-left: 3px; }
+.flag.bad { border-color: color-mix(in oklab, var(--st-crit) 55%, var(--line)); color: var(--fg); }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; font-size: 11.5px; }
+.kv dt { color: var(--fg-3); }
+.kv dd { color: var(--fg-2); font-family: var(--font-mono); font-size: 11px; word-break: break-word; }
+.sec-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.sec-tag { font-size: 11px; padding: 1px 7px; border-radius: 4px; border: 1px solid var(--line); color: var(--fg-2); }
+.sec-tag::before { content: "✓ "; color: var(--st-good); }
+.sec-tag.miss::before { content: "✕ "; color: var(--st-crit); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--fg-2); margin-top: 6px; }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.tl-lane { position: relative; height: 16px; margin: 3px 0; background: var(--bg-3); border-radius: 3px; }
+.tl-lane-l { font-family: var(--font-mono); font-size: 10px; color: var(--fg-3); margin-top: 6px; }
+.tl-seg { position: absolute; top: 2px; bottom: 2px; border-radius: 2px; min-width: 2px; }
+.tl-seg:hover, .tl-seg:focus { outline: 2px solid var(--fg); outline-offset: 0; z-index: 1; }
+.pl-pre { white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-2); background: var(--bg-3); border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; max-height: 360px; overflow: auto; margin-top: 6px; }
+details.ev summary { cursor: pointer; font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-2); padding: 2px 0; list-style: none; display: flex; gap: 8px; }
+details.ev summary::-webkit-details-marker { display: none; }
+details.ev summary .k { color: var(--fg-3); width: 92px; flex-shrink: 0; }
+details.ev summary .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.linkbtn { background: none; border: none; padding: 0; color: var(--link); cursor: pointer; font: inherit; font-size: 11px; }
+
+/* Dashboard */
+.dash { padding: 18px 24px 80px; max-width: 1180px; }
+.dash-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.dash-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.card.wide { grid-column: 1 / -1; }
+.card-h { font-size: 13px; font-weight: 600; }
+.card-s { font-size: 11.5px; color: var(--fg-3); margin: 2px 0 10px; }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
+.kpi-v { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; margin-top: 4px; }
+.kpi-s { font-size: 11.5px; color: var(--fg-3); margin-top: 2px; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { fill: var(--fg-3); font-family: var(--font-mono); font-size: 10px; }
+.chart .hit { cursor: pointer; }
+.chart .hit:hover .mk, .chart .hit:focus .mk { stroke: var(--fg); stroke-width: 2; }
+.wgrid { width: 100%; border-collapse: separate; border-spacing: 2px; font-size: 11.5px; table-layout: fixed; }
+.wgrid th { font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; color: var(--fg-3); text-align: center; padding: 2px; white-space: nowrap; }
+.wgrid th.rl { text-align: left; width: 34%; }
+.wgrid td.rl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg-2); padding-right: 6px; }
+.wgrid td.c { background: var(--bg-3); border-radius: 3px; height: 22px; text-align: center; padding: 2px; }
+.wgrid .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin: 1px; border: none; padding: 0; cursor: pointer; background: var(--st-c); vertical-align: middle; }
+.wgrid .dot:hover, .wgrid .dot:focus { outline: 2px solid var(--fg); outline-offset: 1px; }
+.dot.t-good { --st-c: var(--st-good); } .dot.t-warn { --st-c: var(--st-warn); } .dot.t-crit { --st-c: var(--st-crit); } .dot.t-none { --st-c: var(--st-none); }
+.bars-h { display: flex; flex-direction: column; gap: 5px; }
+.bar-row { display: grid; grid-template-columns: minmax(0, 38%) 1fr auto; gap: 8px; align-items: center; font-size: 11.5px; }
+.bar-row .l { color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-row .t { height: 10px; background: var(--bg-3); border-radius: 0 4px 4px 0; }
+.bar-row .f { height: 100%; background: var(--ph-1); border-radius: 0 4px 4px 0; min-width: 2px; }
+.bar-row .v { font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+#viz-tip {
+  position: fixed; z-index: 300; pointer-events: none; display: none; max-width: 300px;
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: 6px; box-shadow: var(--shadow);
+  padding: 7px 9px; font-size: 11.5px; color: var(--fg-2); line-height: 1.45;
+}
+#viz-tip b { color: var(--fg); font-weight: 600; }
+
+/* Active table: sort + filter */
+.agents-table th.sort { cursor: pointer; user-select: none; }
+.agents-table th.sort:hover { color: var(--fg); }
+.agents-table th .arr { color: var(--fg-4); margin-left: 3px; }
+.tbl-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.tbl-bar .input { max-width: 280px; padding: 5px 9px; font-size: 12.5px; }
+.spark-bar.t-good { background: var(--st-good); } .spark-bar.t-warn { background: var(--st-warn); }
+.spark-bar.t-crit { background: var(--st-crit); } .spark-bar.t-none { background: var(--line-2); }
+
+/* Sidebar: runs only, collapsible */
+.sb-runs-hdr { padding: 10px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; flex-shrink: 0; font-size: 12.5px; font-weight: 500; }
+.sb-runs-hdr .cnt { font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-4); }
+#app.sb-collapsed #sidebar { display: none; }
+#sb-open-btn { display: none; }
+#app.sb-collapsed #sb-open-btn { display: inline-flex; }
+
+@media (max-width: 640px) {
+  .dash { padding: 10px 14px 24px; }
+  .dash-grid { grid-template-columns: minmax(0, 1fr); }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .kpi-v { font-size: 20px; }
+}
 </style>
 </head>
 <body>
@@ -598,13 +723,11 @@ details.log-section summary::-webkit-details-marker { display: none; }
   <aside id="sidebar">
     <div class="sb-brand">
       <div class="sb-brand-name">dispatch</div>
+      <button class="btn btn-ghost btn-sm" onclick="setSidebarCollapsed(true)" title="Hide runs sidebar">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/><polyline points="16 10 14 12 16 14"/></svg>
+      </button>
     </div>
-    <div class="mode-toggle">
-      <div class="mode-toggle-inner">
-        <button class="mode-btn active" id="mode-agents" onclick="setSidebarMode('agents')"></button>
-        <button class="mode-btn" id="mode-runs" onclick="setSidebarMode('runs')"></button>
-      </div>
-    </div>
+    <div class="sb-runs-hdr" id="sb-runs-hdr"></div>
     <div class="filter-strip" id="filter-strip"></div>
     <div id="sb-list"></div>
     <div class="sb-footer">
@@ -646,9 +769,14 @@ details.log-section summary::-webkit-details-marker { display: none; }
     <!-- Topbar -->
     <div id="topbar">
       <div class="topbar-top">
-        <div>
+        <div style="display:flex;gap:8px;align-items:flex-start">
+          <button class="btn btn-ghost btn-sm" id="sb-open-btn" onclick="setSidebarCollapsed(false)" title="Show runs sidebar" style="margin-top:1px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/><polyline points="14 10 16 12 14 14"/></svg>
+          </button>
+          <div>
           <h1 class="topbar-title">Agents</h1>
           <div class="topbar-meta" id="topbar-meta"></div>
+          </div>
         </div>
         <div class="topbar-actions">
           <button class="run-pill" id="run-pill" hidden onclick="openRunPill()"></button>
@@ -676,6 +804,7 @@ details.log-section summary::-webkit-details-marker { display: none; }
         <button class="tab active" id="tab-digest" onclick="setTab('digest')">Digest<span class="tc" id="tc-digest"></span></button>
         <button class="tab" id="tab-active" onclick="setTab('active')">Active<span class="tc" id="tc-active"></span></button>
         <button class="tab" id="tab-archived" onclick="setTab('archived')">Archived<span class="tc" id="tc-archived"></span></button>
+        <button class="tab" id="tab-dashboard" onclick="setTab('dashboard')">Dashboard</button>
         <button class="tab" id="tab-library" onclick="setTab('library')">Library<span class="tc" id="tc-library"></span></button>
       </div>
     </div>
@@ -697,6 +826,10 @@ details.log-section summary::-webkit-details-marker { display: none; }
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 13 16 15"/></svg>
         <span>Runs</span>
         <i class="run-dot" id="mtab-runs-dot" hidden></i>
+      </button>
+      <button class="mob-tab-btn" id="mtab-stats" onclick="setMobileTab('stats')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="20" x2="5" y2="12"/><line x1="12" y1="20" x2="12" y2="5"/><line x1="19" y1="20" x2="19" y2="15"/></svg>
+        <span>Stats</span>
       </button>
     </nav>
   </main>
@@ -768,6 +901,7 @@ details.log-section summary::-webkit-details-marker { display: none; }
 
 <!-- ── Toast ── -->
 <div id="toast"></div>
+<div id="viz-tip" role="tooltip"></div>
 
 <script>
 marked.use({
@@ -807,9 +941,9 @@ window.fetch = async (...args) => {
 };
 
 // ── State ──
-let sidebarMode = 'agents'; // agents | runs
-let dispatchTab = 'digest';      // digest | active | archived
-let mobileTab = 'digest';    // digest | agents | runs
+let sidebarMode = 'runs'; // the sidebar lists runs only
+let dispatchTab = 'digest';      // digest | active | archived | dashboard | library
+let mobileTab = 'digest';    // digest | agents | runs | stats
 let activeFilter = 'all';
 let isDark = true;
 
@@ -1092,9 +1226,7 @@ const FILTERS = ['all','news','local-news','local-infrastructure','local-events'
 
 function initFilterStrip() {
   const strip = document.getElementById('filter-strip');
-  const agentNames = sidebarMode === 'agents'
-    ? [...new Set(allDispatches.filter(c => c.enabled).map(c => c.agent))]
-    : [...new Set(allSessions.map(s => s.agent).filter(Boolean))];
+  const agentNames = [...new Set(allSessions.map(s => s.agent).filter(Boolean))];
   const agents = agentNames.sort().map(name => ({
     name,
     label: allAgents.find(a => a.name === name)?.label || name,
@@ -1111,23 +1243,17 @@ function setFilter(f) {
   renderSidebarList();
 }
 
-function setSidebarMode(mode) {
-  if (mode !== sidebarMode) activeFilter = 'all';
-  sidebarMode = mode;
-  document.getElementById('mode-agents').classList.toggle('active', mode === 'agents');
-  document.getElementById('mode-runs').classList.toggle('active', mode === 'runs');
+// The sidebar only lists runs (dispatches live on the Active tab); callers use this to bring it into view.
+function setSidebarMode() {
+  setSidebarCollapsed(false);
   renderSidebarList();
-  if (mode === 'agents') loadDispatches();
-  else loadSessions();
+  loadSessions();
 }
 
 function updateModeBtns() {
-  const activeCrons = allDispatches.filter(c => c.enabled);
-  const iconBolt = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="none"><polygon points="13 2 4 14 11 14 10 22 20 10 13 10 13 2" fill="currentColor"/></svg>`;
   const iconClock = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 13 16 15"/></svg>`;
-  document.getElementById('mode-agents').innerHTML = `${iconBolt} Agents <span class="cnt">${activeCrons.length}</span>`;
   const nActive = activeJobs.size;
-  document.getElementById('mode-runs').innerHTML = `${iconClock} Runs <span class="cnt">${allSessions.length}</span>` +
+  document.getElementById('sb-runs-hdr').innerHTML = `${iconClock} Runs <span class="cnt">${allSessions.length}</span>` +
     (nActive ? ` <i class="run-dot" title="${nActive} active"></i>` : '');
 }
 
@@ -1139,31 +1265,18 @@ function renderSidebar() {
 
 function renderSidebarList() {
   const list = document.getElementById('sb-list');
-  if (sidebarMode === 'agents') {
-    let items = allDispatches.filter(c => c.enabled);
-    if (activeFilter !== 'all') items = items.filter(c => c.agent === activeFilter);
-    if (!items.length) { list.innerHTML = `<div class="empty-state" style="padding:24px;text-align:center;color:var(--fg-3);font-size:12px">No active agents</div>`; return; }
-    list.innerHTML = items.map(c => {
-      const label = dispatchLabel(c, 40);
-      return `<button class="sb-item" onclick="openAgentSheet(${c.id})">
-        <div class="sb-item-row">${pillHTML(c.agent)}<span style="margin-left:auto" class="meta-mono" style="font-size:10.5px">${c.run_count} runs</span></div>
-        <div class="sb-item-title">${esc(label)}</div>
-        <div class="sb-item-sub">${esc(humanizeCron(c.schedule, c.timezone))}</div>
-      </button>`;
-    }).join('');
-  } else {
-    let items = [...allSessions];
-    if (activeFilter !== 'all') items = items.filter(s => s.agent === activeFilter);
-    if (!items.length) { list.innerHTML = `<div style="padding:24px;text-align:center;color:var(--fg-3);font-size:12px">No runs yet</div>`; return; }
-    list.innerHTML = items.map(s => {
-      const isActive = runDrawerSessionId === s.id;
-      const runBadge = `<span class="run-status" data-session="${s.id}">${runStatusHTML(s.id)}</span>`;
-      return `<button class="sb-item${isActive ? ' active' : ''}${!s.viewed ? ' unread' : ''}" onclick="openRunDrawer(${s.id})">
-        <div class="sb-item-row">${pillHTML(s.agent)} ${runBadge} ${jobForSession(s.id) ? '' : `<span class="meta-mono" style="margin-left:auto;font-size:10.5px">${esc(fmtTime(s.started_at))}</span>`}${s.total_duration_ms > 0 ? `<span class="meta-mono" style="font-size:10.5px;color:var(--fg-4)">${fmtDuration(s.total_duration_ms)}</span>` : ''}</div>
-        <div class="sb-item-prompt">${esc(s.prompt || '—')}</div>
-      </button>`;
-    }).join('');
-  }
+  let items = [...allSessions];
+  if (activeFilter !== 'all') items = items.filter(s => s.agent === activeFilter);
+  if (!items.length) { list.innerHTML = `<div style="padding:24px;text-align:center;color:var(--fg-3);font-size:12px">No runs yet</div>`; return; }
+  list.innerHTML = items.map(s => {
+    const isActive = runDrawerSessionId === s.id;
+    const runBadge = `<span class="run-status" data-session="${s.id}">${runStatusHTML(s.id)}</span>`;
+    return `<button class="sb-item${isActive ? ' active' : ''}${!s.viewed ? ' unread' : ''}" onclick="openRunDrawer(${s.id})">
+      <div class="sb-item-row">${pillHTML(s.agent)} ${runBadge} ${jobForSession(s.id) ? '' : `<span class="meta-mono" style="margin-left:auto;font-size:10.5px">${esc(fmtTime(s.started_at))}</span>`}</div>
+      <div class="sb-item-prompt">${esc(s.prompt || '—')}</div>
+      ${!jobForSession(s.id) && s.run_status ? `<div style="margin-top:5px">${metricsChipHTML(s.run_status, s.run_sources, s.run_ms, { backfill: s.metrics_source === 'backfill' })}</div>` : ''}
+    </button>`;
+  }).join('');
 }
 
 // ── Topbar ──
@@ -1182,7 +1295,7 @@ function updateTopbar() {
 
 function setTab(tab) {
   dispatchTab = tab;
-  ['digest','active','archived','library'].forEach(t => {
+  ['digest','active','archived','dashboard','library'].forEach(t => {
     document.getElementById('tab-' + t).classList.toggle('active', t === tab);
   });
   renderContent();
@@ -1191,10 +1304,10 @@ function setTab(tab) {
 // ── Mobile tab ──
 function setMobileTab(tab) {
   mobileTab = tab;
-  ['digest','agents','runs'].forEach(t => {
+  ['digest','agents','runs','stats'].forEach(t => {
     document.getElementById('mtab-' + t).classList.toggle('active', t === tab);
   });
-  const titles = { digest: 'Digest', agents: 'Agents', runs: 'Runs' };
+  const titles = { digest: 'Digest', agents: 'Agents', runs: 'Runs', stats: 'Stats' };
   document.getElementById('mob-title').childNodes[0].textContent = titles[tab];
   const counts = {
     digest: digestItems.length,
@@ -1217,12 +1330,14 @@ function renderContent() {
   if (dispatchTab === 'digest') renderDigest();
   else if (dispatchTab === 'active') renderDispatchesTable(allDispatches.filter(c => c.enabled), 'active');
   else if (dispatchTab === 'archived') renderDispatchesTable(allDispatches.filter(c => !c.enabled), 'archived');
+  else if (dispatchTab === 'dashboard') renderDashboard();
   else renderAgentLibrary();
 }
 
 function renderMobileContent() {
   if (mobileTab === 'digest') renderDigest();
   else if (mobileTab === 'agents') renderMobileAgents();
+  else if (mobileTab === 'stats') renderDashboard();
   else renderMobileRuns();
 }
 
@@ -1309,52 +1424,7 @@ function digestToggleCard(id, event) {
   renderDispatch();
 }
 
-// ── Agents Table ──
-function renderDispatchesTable(dispatches, kind) {
-  const el = document.getElementById('content');
-  if (!dispatches.length) {
-    el.innerHTML = `<div class="empty-state">${kind === 'active' ? 'No active agents.' : 'No archived agents.'}</div>`;
-    return;
-  }
-
-  const playIcon = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="none"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor"/></svg>`;
-  const editIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16v4z"/><line x1="14" y1="6" x2="18" y2="10"/></svg>`;
-  const archIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><line x1="10" y1="13" x2="14" y2="13"/></svg>`;
-  const trashIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 20 7"/><path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>`;
-
-  const rows = dispatches.map(c => {
-    const runs = c.max_runs ? `${c.run_count}/${c.max_runs}` : `${c.run_count}`;
-    const actions = kind === 'active'
-      ? `<button class="btn btn-sm" title="Run now" onclick="event.stopPropagation();runDispatchNow(${c.id})">${playIcon}</button>
-         <button class="btn btn-sm" onclick="event.stopPropagation();openAgentSheet(${c.id})">${editIcon} Edit</button>
-         <button class="btn btn-ghost btn-sm" title="Archive" onclick="event.stopPropagation();toggleDispatch(${c.id},false)">${archIcon}</button>`
-      : `<button class="btn btn-sm" onclick="event.stopPropagation();toggleDispatch(${c.id},true)">Enable</button>
-         <button class="btn btn-ghost btn-sm btn-danger" title="Delete" onclick="event.stopPropagation();deleteDispatch(${c.id})">${trashIcon}</button>`;
-    const schedCell = kind === 'active' ? nextRunCellHTML(c.schedule, c.timezone) : `<span class="meta-mono">${esc(humanizeCron(c.schedule, c.timezone))}</span>`;
-    return `<tr onclick="openAgentSheet(${c.id})">
-      <td>${pillHTML(c.agent)}</td>
-      <td><span style="font-weight:500">${esc(dispatchLabel(c))}</span></td>
-      <td><span style="color:var(--fg-2);display:block;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.prompt)}</span></td>
-      <td>${schedCell}</td>
-      <td class="r"><span class="mono" style="color:var(--fg-2)">${runs}</span></td>
-      <td class="r">${kind === 'active' ? sparkHTML(c.last_7_days) : '<span class="meta">—</span>'}</td>
-      <td>${statusBadgeHTML(kind === 'active' ? 'active' : 'archived')}</td>
-      <td class="r"><div style="display:inline-flex;gap:4px" onclick="event.stopPropagation()">${actions}</div></td>
-    </tr>`;
-  }).join('');
-
-  el.innerHTML = `<div style="padding:16px 24px 80px">
-    <div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden">
-      <table class="agents-table">
-        <thead><tr style="background:var(--panel-2)">
-          <th>Agent</th><th>Label</th><th>Prompt</th><th>Schedule</th>
-          <th class="r">Runs</th><th class="r">Last 7</th><th>Status</th><th class="r">Actions</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-  </div>`;
-}
+// ── Agents Table ── (see renderDispatchesTable below)
 
 // ── Mobile content ──
 function renderMobileAgents() {
@@ -1445,9 +1515,9 @@ function renderMobileRuns() {
         ${pillHTML(s.agent)}
         <span class="run-status" data-session="${s.id}">${runStatusHTML(s.id)}</span>
         <span class="meta-mono" style="margin-left:auto;font-size:10.5px">${esc(fmtTime(s.started_at))}</span>
-        ${s.total_duration_ms > 0 ? `<span class="meta-mono" style="font-size:10.5px;color:var(--fg-4)">${fmtDuration(s.total_duration_ms)}</span>` : ''}
       </div>
       <div style="margin-top:6px;font-size:13.5px;color:var(--fg);line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.prompt || '—')}</div>
+      ${!jobForSession(s.id) && s.run_status ? `<div style="margin-top:6px">${metricsChipHTML(s.run_status, s.run_sources, s.run_ms, { backfill: s.metrics_source === 'backfill' })}</div>` : ''}
     </button>`).join('');
   el.innerHTML = `<div style="padding:10px 14px 24px;display:flex;flex-direction:column;gap:6px">${cards}</div>`;
 }
@@ -1481,7 +1551,9 @@ function renderRunDrawer(s) {
   const assistantMsgs = s.messages.filter(m => m.role === 'assistant');
   const lastResponse = assistantMsgs[assistantMsgs.length - 1];
   const errorMsg = s.messages.find(m => m.role === 'error');
-  const totalDuration = s.tool_calls.reduce((a, t) => a + (t.duration_ms || 0), 0);
+  const m = s.metrics;
+  const totalDuration = m?.timing?.run_ms || (s.ended_at ? Date.parse(s.ended_at) - Date.parse(s.started_at) : 0);
+  lastDrawerSession = s;
 
   const job = jobForSession(s.id);
   const isRunning = !!job;
@@ -1492,7 +1564,9 @@ function renderRunDrawer(s) {
   document.getElementById('run-drawer-hdr').innerHTML = `
     ${pillHTML(agent)}
     <span class="meta-mono" style="font-size:11px">${esc(fmtTime(s.started_at))}</span>
-    ${totalDuration > 0 ? `<span class="meta-mono" style="margin-left:auto;font-size:11px">${fmtDuration(totalDuration)}</span>` : '<span style="margin-left:auto"></span>'}
+    ${m && !isRunning
+      ? `<span style="margin-left:auto">${metricsChipHTML(m.status, m.sources, totalDuration, { onclick: 'toggleStats()', open: statsOpen, backfill: m.source === 'backfill' })}</span>`
+      : (totalDuration > 0 ? `<span class="meta-mono" style="margin-left:auto;font-size:11px">${fmtDuration(totalDuration)}</span>` : '<span style="margin-left:auto"></span>')}
     ${stopBtn}
     <button class="btn btn-ghost btn-sm" onclick="closeRunDrawer()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
@@ -1500,6 +1574,11 @@ function renderRunDrawer(s) {
   `;
 
   let body = '';
+  if (m && !isRunning && statsOpen) {
+    const events = m.source === 'backfill' ? [] : runEventsCache.get(s.id);
+    if (events === undefined) loadRunEvents(s.id);
+    body += `<div class="stats">${renderStatsPanel(s, events)}${events === undefined || events === null ? '<div class="stats-sec meta">Loading run detail…</div>' : ''}</div>`;
+  }
   if (userMsg) {
     body += `<div class="drawer-section-label">Prompt</div>
       <p style="margin:0 0 0;font-size:14px;color:var(--fg);line-height:1.5">${esc(userMsg.content)}</p>`;
@@ -1646,6 +1725,712 @@ function renderSessionFull(s) {
     </div>
     ${body || '<div style="color:var(--fg-3);font-size:13px;font-style:italic">No output recorded.</div>'}
   </div>`;
+}
+
+// ── Run metrics ──
+// Pipeline phases fold into six groups so charts stay within six categorical colors.
+const PHASES = [
+  { key: 'plan',   label: 'Plan',     names: ['planner'] },
+  { key: 'search', label: 'Search',   names: ['searcher', 'link_validator'] },
+  { key: 'fetch',  label: 'Fetch',    names: ['fetcher', 'ranker'] },
+  { key: 'read',   label: 'Read',     names: ['page_summarizer'] },
+  { key: 'check',  label: 'Validate', names: ['validator'] },
+  { key: 'write',  label: 'Write',    names: ['synthesizer', 'aggregator'] },
+];
+PHASES.forEach((p, i) => { p.color = `var(--ph-${i + 1})`; });
+function phaseOf(name) { return PHASES.find(p => p.names.includes(name)) || null; }
+function phaseGroups(phases) {
+  const out = {};
+  for (const [name, ms] of Object.entries(phases || {})) {
+    const p = phaseOf(name);
+    if (p) out[p.key] = (out[p.key] || 0) + (ms || 0);
+  }
+  return out;
+}
+
+const STATUS_SERIES = [
+  { key: 'good', label: 'Done', color: 'var(--st-good)' },
+  { key: 'warn', label: 'Empty / 0 sources', color: 'var(--st-warn)' },
+  { key: 'crit', label: 'Error', color: 'var(--st-crit)' },
+  { key: 'none', label: 'Cancelled', color: 'var(--st-none)' },
+];
+const TONE_RANK = { none: 0, good: 1, warn: 2, crit: 3 };
+
+function runTone(status, sources) {
+  if (status === 'error') return 'crit';
+  if (status === 'empty' || (status === 'done' && sources === 0)) return 'warn';
+  if (status === 'done') return 'good';
+  return 'none';
+}
+function statusText(status, sources) {
+  if (status === 'done' && sources === 0) return 'done, 0 sources';
+  return status || 'no metrics yet';
+}
+function fmtCompact(n) {
+  if (n == null || isNaN(n)) return '—';
+  const a = Math.abs(n);
+  if (a >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (a >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
+  return String(Math.round(n));
+}
+function fmtBytes(b) {
+  if (b == null) return '—';
+  if (b >= 1 << 30) return (b / (1 << 30)).toFixed(1) + ' GB';
+  if (b >= 1 << 20) return (b / (1 << 20)).toFixed(0) + ' MB';
+  return fmtCompact(b) + ' B';
+}
+function fmtMs(ms) { return ms == null ? '—' : (ms <= 0 ? '0ms' : fmtDuration(ms)); }
+function pct(x) { return x == null ? '—' : `${Math.round(x * 100)}%`; }
+function hostOf(url) { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url || ''; } }
+function shortUrl(url) { try { const u = new URL(url); return u.hostname.replace(/^www\./, '') + (u.pathname.length > 1 ? u.pathname : '') + u.search; } catch { return url || ''; } }
+
+function metricsChipHTML(status, sources, runMs, opts = {}) {
+  if (!status) return '';
+  const tone = runTone(status, sources);
+  const parts = [];
+  if (sources != null) parts.push(`${sources} source${sources === 1 ? '' : 's'}`);
+  else if (status !== 'done') parts.push(status);
+  if (runMs > 0) parts.push(fmtDuration(runMs));
+  const label = parts.join(' · ') || status;
+  const tip = statusText(status, sources) + (opts.backfill ? ' (reconstructed from logs)' : '');
+  if (opts.onclick) {
+    return `<button class="mchip t-${tone}${opts.open ? ' open' : ''}" onclick="${opts.onclick}" title="${esc(tip)} · click for stats" aria-expanded="${!!opts.open}"><span class="st-ic"></span>${esc(label)} ${opts.open ? '▴' : '▾'}</button>`;
+  }
+  return `<span class="mchip t-${tone}" title="${esc(tip)}"><span class="st-ic"></span>${esc(label)}</span>`;
+}
+
+// One tooltip for every chart mark: elements carry data-tip (first line bold), shown on hover and focus.
+(function initVizTip() {
+  const tip = () => document.getElementById('viz-tip');
+  function show(target, x, y) {
+    const t = tip();
+    if (!t) return;
+    t.replaceChildren();
+    target.dataset.tip.split('\n').forEach((line, i) => {
+      const el = document.createElement(i === 0 ? 'b' : 'div');
+      el.textContent = line;
+      t.appendChild(el);
+    });
+    t.style.display = 'block';
+    const r = t.getBoundingClientRect();
+    const left = Math.min(Math.max(8, x + 12), window.innerWidth - r.width - 8);
+    const top = y + 14 + r.height > window.innerHeight ? y - r.height - 10 : y + 14;
+    t.style.left = left + 'px';
+    t.style.top = Math.max(8, top) + 'px';
+  }
+  function hide() { const t = tip(); if (t) t.style.display = 'none'; }
+  document.addEventListener('pointermove', e => {
+    const target = e.target.closest?.('[data-tip]');
+    if (target) show(target, e.clientX, e.clientY); else hide();
+  });
+  document.addEventListener('focusin', e => {
+    const target = e.target.closest?.('[data-tip]');
+    if (!target) return hide();
+    const r = target.getBoundingClientRect();
+    show(target, r.left + r.width / 2, r.bottom);
+  });
+  document.addEventListener('focusout', hide);
+  document.addEventListener('scroll', hide, true);
+})();
+
+// ── Stats cache (/api/stats) ──
+const statsCache = {}; // days → { at, data }
+async function loadStats(days, force) {
+  const c = statsCache[days];
+  if (c && !force && Date.now() - c.at < 60000) return c.data;
+  try {
+    const r = await fetch(`/api/stats?days=${days}`, { headers: headers() });
+    if (!r.ok) return c?.data || null;
+    const data = await r.json();
+    statsCache[days] = { at: Date.now(), data };
+    return data;
+  } catch { return c?.data || null; }
+}
+function invalidateStats() { for (const k of Object.keys(statsCache)) delete statsCache[k]; }
+
+function localDayKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function lastDays(n) {
+  const out = [];
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
+  for (let i = n - 1; i >= 0; i--) {
+    const x = new Date(d);
+    x.setDate(d.getDate() - i);
+    out.push({ key: localDayKey(x), date: x });
+  }
+  return out;
+}
+
+// ── Run card: stats panel in the run drawer ──
+let statsOpen = (() => { try { return localStorage.getItem('dispatch-stats-open') === '1'; } catch { return false; } })();
+let lastDrawerSession = null;
+const runEventsCache = new Map(); // session id → events (finished runs only)
+
+function toggleStats() {
+  statsOpen = !statsOpen;
+  try { localStorage.setItem('dispatch-stats-open', statsOpen ? '1' : '0'); } catch {}
+  if (lastDrawerSession) renderRunDrawer(lastDrawerSession);
+}
+
+async function loadRunEvents(sessionId) {
+  if (runEventsCache.has(sessionId)) return;
+  runEventsCache.set(sessionId, null); // loading
+  try {
+    const r = await fetch(`/api/sessions/${sessionId}/events`, { headers: headers() });
+    runEventsCache.set(sessionId, r.ok ? await r.json() : []);
+  } catch { runEventsCache.set(sessionId, []); }
+  if (lastDrawerSession?.id === sessionId && runDrawerSessionId === sessionId) renderRunDrawer(lastDrawerSession);
+}
+
+async function togglePayload(sessionId, seq) {
+  const row = document.getElementById(`pl-${seq}`);
+  if (!row) return;
+  if (!row.hidden) { row.hidden = true; return; }
+  row.hidden = false;
+  const box = row.querySelector('div');
+  if (box.dataset.loaded) return;
+  box.textContent = 'Loading…';
+  try {
+    const r = await fetch(`/api/sessions/${sessionId}/payloads/${seq}`, { headers: headers() });
+    if (!r.ok) { box.textContent = r.status === 404 ? 'Payload expired (kept 30 days).' : 'Could not load payload.'; return; }
+    const p = await r.json();
+    let input = p.input;
+    try {
+      input = JSON.parse(p.input).map(m => `── ${m.role}${m.tool_calls ? ' (tool calls)' : ''} ──\n${m.content || ''}${m.tool_calls ? '\n' + JSON.stringify(m.tool_calls, null, 2) : ''}`).join('\n\n');
+    } catch {}
+    box.innerHTML = `<div class="stats-h" style="margin:4px 0 0">Input · ${fmtCompact((p.input || '').length)} chars</div><pre class="pl-pre"></pre>
+      <div class="stats-h" style="margin:8px 0 0">Output · ${fmtCompact((p.output || '').length)} chars</div><pre class="pl-pre"></pre>`;
+    const pres = box.querySelectorAll('pre');
+    pres[0].textContent = input;
+    pres[1].textContent = p.output || '(empty)';
+    box.dataset.loaded = '1';
+  } catch { box.textContent = 'Could not load payload.'; }
+}
+
+function tileHTML(label, value, sub, tip) {
+  return `<div class="tile"${tip ? ` data-tip="${esc(tip)}"` : ''}><div class="tile-l">${esc(label)}</div><div class="tile-v">${esc(value)}</div>${sub ? `<div class="tile-s">${esc(sub)}</div>` : ''}</div>`;
+}
+
+function renderStatsPanel(s, events) {
+  const m = s.metrics;
+  const t = m.timing || {};
+  const llm = m.llm || {};
+  const run = m.run || {};
+  const backfill = m.source === 'backfill';
+  const ev = events || [];
+  const by = kind => ev.filter(e => e.kind === kind);
+  const sec = (title, body, note) => `<div class="stats-sec"><div class="stats-h">${esc(title)}${note ? `<span class="note">${esc(note)}</span>` : ''}</div>${body}</div>`;
+  let html = '';
+
+  // Headline tiles
+  const b = m.source_breakdown || {};
+  const srcSub = m.inbox
+    ? `${m.inbox.items} inbox items${m.inbox.backlog ? ` · ${m.inbox.backlog} still queued` : ''}`
+    : [b.summarized_pages && `${b.summarized_pages} pages read`, b.fetched_pages && `${b.fetched_pages} fetched`, b.direct_pages && `${b.direct_pages} direct`, b.search_results && `${b.search_results} results`].filter(Boolean).join(' · ');
+  const durSub = [t.queue_ms > 1000 && `queued ${fmtMs(t.queue_ms)}`, t.late_ms > 1000 && `late ${fmtMs(t.late_ms)}`, t.notify_ms && `notify ${fmtMs(t.notify_ms)}`].filter(Boolean).join(' · ');
+  const out = m.output || {};
+  const synth = m.synth || {};
+  const err = run.error;
+  html += sec('Run', `<div class="tiles">
+    ${tileHTML('Status', statusText(m.status, m.sources), err ? `${err.type} in ${err.phase || '?'}` : (run.trigger || ''), err ? `${err.type}\n${err.message}` : '')}
+    ${tileHTML('Sources', m.sources == null ? '—' : String(m.sources), srcSub, 'Distinct sources that reached the synthesizer (inbox items count individually)')}
+    ${tileHTML('Duration', fmtMs(t.run_ms), durSub)}
+    ${tileHTML('Tokens in / out', `${fmtCompact(llm.prompt_tokens)} / ${fmtCompact(llm.output_tokens)}`, llm.calls ? `${llm.calls} calls${llm.reloads ? ` · ${llm.reloads} reloads` : ''}${llm.truncated ? ` · ${llm.truncated} cut off` : ''}` : '')}
+    ${tileHTML('Synth input', synth.sent_chars || synth.input_chars ? `${fmtCompact(synth.sent_chars || synth.input_chars)} chars` : '—', synth.prompt_tokens ? `${fmtCompact(synth.prompt_tokens)} tok · ${fmtMs(synth.ms)}${synth.trimmed ? ' · trimmed' : ''}${synth.hard_truncated ? ' · truncated' : ''}` : '')}
+    ${tileHTML('Output', out.words != null ? `${out.words} words` : '—', out.cited_sources != null ? `${out.cited_sources} source${out.cited_sources === 1 ? '' : 's'} cited (${pct(out.citation_rate)})` : (out.urls ? `${out.urls.length} links` : ''))}
+  </div>`, backfill ? 'reconstructed from logs: no per-call detail' : `${m.events || ev.length} events`);
+
+  // Phase timeline
+  const phaseEvs = by('phase').filter(e => e.name !== 'pipeline' && e.duration_ms != null);
+  if (phaseEvs.length) {
+    const span = Math.max(1, ...phaseEvs.map(e => e.t_ms + e.duration_ms));
+    const lanes = [...new Set(phaseEvs.map(e => e.sub || ''))];
+    const laneHTML = lanes.map(l => `${lanes.length > 1 ? `<div class="tl-lane-l">${esc(l || 'main')}</div>` : ''}<div class="tl-lane">${
+      phaseEvs.filter(e => (e.sub || '') === l).map(e => {
+        const p = phaseOf(e.name);
+        return `<span class="tl-seg" tabindex="0" style="left:${(e.t_ms / span * 100).toFixed(2)}%;width:${(e.duration_ms / span * 100).toFixed(2)}%;background:${p ? p.color : 'var(--fg-4)'}" data-tip="${esc(`${fmtMs(e.duration_ms)} · ${e.name.replace('_', ' ')}\nstarts at ${fmtMs(e.t_ms)}${e.data.round ? `\nretry round ${e.data.round}` : ''}${e.data.loop ? `\nloop ${e.data.loop}` : ''}`)}"></span>`;
+      }).join('')}</div>`).join('');
+    const used = PHASES.filter(p => phaseEvs.some(e => p.names.includes(e.name)));
+    html += sec('Timeline', laneHTML + `<div class="legend">${used.map(p => `<span><i style="background:${p.color}"></i>${p.label}</span>`).join('')}</div>`, `0 – ${fmtMs(span)}`);
+  } else if (t.phases && Object.keys(t.phases).length) {
+    html += sec('Phases', `<dl class="kv">${Object.entries(t.phases).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${fmtMs(v)}</dd>`).join('')}</dl>`);
+  }
+
+  // LLM calls
+  const llmEvs = by('llm');
+  if (llmEvs.length) {
+    const rows = llmEvs.map(e => {
+      const d = e.data;
+      const flags = [
+        d.reloaded && `<span class="flag bad" title="Model was loaded for this call (${fmtMs(d.load_ms)})">reload</span>`,
+        d.truncated && `<span class="flag bad" title="Stopped at the output cap">cut off</span>`,
+        d.ctx_near_full && `<span class="flag bad" title="Prompt used ${pct(d.ctx_used)} of num_ctx">ctx full</span>`,
+        d.wait_ms > 2000 && `<span class="flag" title="Waited for Ollama (another client)">wait ${fmtMs(d.wait_ms)}</span>`,
+        d.thinking_chars && `<span class="flag bad" title="Model produced reasoning text">think ${fmtCompact(d.thinking_chars)}</span>`,
+        !e.ok && `<span class="flag bad" title="${esc(e.error || '')}">failed</span>`,
+      ].filter(Boolean).join('');
+      return `<tr><td>${esc(e.phase || '')}${e.sub ? ` <span class="meta-mono" style="font-size:10px">${esc(e.sub)}</span>` : ''}${flags}</td>
+        <td class="r">${fmtMs(e.duration_ms)}</td><td class="r">${fmtCompact(d.prompt_tokens)}</td><td class="r">${fmtCompact(d.output_tokens)}</td>
+        <td class="r" title="prefill ${d.prefill_tps ?? '—'} tok/s">${d.gen_tps != null ? (d.gen_tps >= 100 ? Math.round(d.gen_tps) : d.gen_tps) : '—'}</td><td class="r">${d.ctx_used != null ? pct(d.ctx_used) : '—'}</td>
+        <td class="r">${e.has_payload ? `<button class="linkbtn" onclick="togglePayload(${s.id},${e.seq})">view</button>` : ''}</td></tr>
+        <tr id="pl-${e.seq}" hidden><td colspan="7"><div></div></td></tr>`;
+    }).join('');
+    const sumIn = llmEvs.reduce((a, e) => a + (e.data.prompt_tokens || 0), 0);
+    html += sec('Model calls', `<table class="mt"><thead><tr><th>Phase</th><th class="r">Time</th><th class="r">In tok</th><th class="r">Out tok</th><th class="r">Tok/s</th><th class="r">Ctx</th><th></th></tr></thead><tbody>${rows}</tbody></table>`,
+      `${llmEvs.length} calls · ${fmtCompact(sumIn)} tokens in · ${llmEvs[0].data.model || ''}`);
+  }
+
+  // Search
+  const sm = m.search;
+  if (sm && sm.providers) {
+    const prov = Object.entries(sm.providers).filter(([, p]) => p.calls || p.off || p.cooldown);
+    const provRows = prov.map(([name, p]) => `<tr><td>${esc(name)}</td><td class="r">${p.ok ?? '—'}</td><td class="r${p.errors ? ' err' : ''}">${p.errors ?? '—'}</td>
+      <td class="r">${p.off ? 'off' : p.cooldown ? `${p.cooldown} cooldown` : ''}</td><td class="r">${p.hits ?? '—'}</td><td class="r">${p.unique ?? '—'}</td>
+      <td class="r">${p.calls && p.ms != null ? fmtMs(Math.round(p.ms / p.calls)) : '—'}</td></tr>`).join('');
+    const searchEvs = by('search');
+    const qRows = searchEvs.map(e => {
+      const d = e.data;
+      const per = Object.entries(d.providers || {}).filter(([, p]) => p.status === 'ok' || p.status === 'error')
+        .map(([n, p]) => p.status === 'ok' ? `${n} ${p.count} · ${fmtMs(p.ms)}` : `${n} error`).join('\n');
+      return `<tr data-tip="${esc(`${e.name}\n${per}${d.dupes ? `\n${d.dupes} duplicates merged` : ''}${d.ddg_fallback ? '\nDuckDuckGo fallback' : ''}`)}"><td class="url" style="max-width:240px;font-family:var(--font-sans);font-size:11.5px">${d.round ? `<span class="flag">retry ${d.round}</span> ` : ''}${esc(e.name)}</td>
+        <td class="r${e.ok ? '' : ' err'}">${e.ok ? (d.hits || []).length : 'failed'}</td><td class="r">${fmtMs(d.ms ?? e.duration_ms)}</td></tr>`;
+    }).join('');
+    html += sec('Search', `<table class="mt"><thead><tr><th>Provider</th><th class="r">OK</th><th class="r">Err</th><th class="r"></th><th class="r">Hits</th><th class="r">Only here</th><th class="r">Avg</th></tr></thead><tbody>${provRows}</tbody></table>
+      ${qRows ? `<details style="margin-top:8px"><summary class="meta-mono" style="cursor:pointer;font-size:10.5px">${searchEvs.length} queries</summary><table class="mt" style="margin-top:4px"><thead><tr><th>Query</th><th class="r">Hits</th><th class="r">Time</th></tr></thead><tbody>${qRows}</tbody></table></details>` : ''}`,
+      `${sm.queries ?? 0} queries${sm.retry_queries ? ` (${sm.retry_queries} retries)` : ''} · ${sm.unique_urls ?? '—'} unique URLs${sm.dupes ? ` · ${sm.dupes} dupes` : ''}`);
+  }
+
+  // Fetches
+  const fetchEvs = by('fetch');
+  if (fetchEvs.length) {
+    const rows = fetchEvs.map(e => {
+      const d = e.data;
+      const via = d.via === 'jina_fallback' ? `jina (http gave ${fmtCompact(d.http_chars)})` : (d.via || '');
+      const extra = d.inbox ? `${d.inbox.items} items${d.inbox.backlog ? `, ${d.inbox.backlog} queued` : ''}` : '';
+      return `<tr data-tip="${esc(`${e.name}\n${[d.status && `HTTP ${d.status}`, d.ctype, d.bytes != null && fmtBytes(d.bytes), via && `via ${via}`, d.final_url && `→ ${d.final_url}`, d.truncated && `kept ${fmtCompact(d.kept_chars)} of ${fmtCompact(d.chars)} chars`, e.error].filter(Boolean).join('\n')}`)}">
+        <td class="url">${esc(shortUrl(e.name))}</td><td>${esc(d.source || '')}</td>
+        <td class="r${e.ok ? '' : ' err'}">${e.ok ? (d.status || 'ok') : esc(truncate(String(d.status || e.error || 'failed'), 18))}</td>
+        <td class="r">${fmtCompact(d.chars)}${d.truncated ? ' ✂' : ''}</td><td class="r">${fmtMs(d.ms ?? e.duration_ms)}</td><td>${esc(extra)}</td></tr>`;
+    }).join('');
+    const f = m.fetch || {};
+    html += sec('Fetches', `<table class="mt"><thead><tr><th>URL</th><th>Source</th><th class="r">Status</th><th class="r">Chars</th><th class="r">Time</th><th></th></tr></thead><tbody>${rows}</tbody></table>`,
+      `${f.ok ?? 0} ok · ${f.failed ?? 0} failed${f.jina ? ` · ${f.jina} via Jina` : ''}${f.truncated ? ` · ${f.truncated} cut to cap` : ''}`);
+  } else if (m.fetch) {
+    html += sec('Fetches', `<dl class="kv"><dt>pages</dt><dd>${m.fetch.pages}</dd><dt>failed</dt><dd>${m.fetch.failed}</dd><dt>chars</dt><dd>${fmtCompact(m.fetch.chars)}</dd></dl>`);
+  }
+  const lc = by('link_check');
+  if (lc.length) {
+    const dead = lc.flatMap(e => (e.data.urls || []).filter(u => !u.ok));
+    html += sec('Link check', dead.length ? `<table class="mt"><tbody>${dead.map(u => `<tr><td class="url">${esc(shortUrl(u.url))}</td><td class="r err">${esc(String(u.status || u.error || 'dead'))}</td></tr>`).join('')}</tbody></table>` : '<div class="meta">All links live.</div>',
+      `${m.links?.checked ?? 0} checked · ${m.links?.dead ?? 0} dead`);
+  }
+
+  // Decisions
+  const dec = by('decision');
+  if (dec.length) {
+    const parts = dec.map(e => {
+      const d = e.data;
+      const sub = e.sub ? ` · ${e.sub}` : '';
+      const bad = d.parsed_ok === false ? ` <span class="flag bad" title="Model output was not valid JSON; fallback used">unparsed</span>` : '';
+      if (e.name === 'planner') return d.direct_sources ? '' : `<div style="margin-bottom:6px"><span class="meta-mono">planner${sub}</span>${bad}<ul style="margin:3px 0 0 16px;font-size:11.5px;color:var(--fg-2)">${(d.queries || []).map(q => `<li>${esc(q)}</li>`).join('')}</ul></div>`;
+      if (e.name === 'validator') return `<div style="margin-bottom:6px;font-size:11.5px"><span class="meta-mono">validator loop ${d.loop}${sub}</span>${bad} · ${d.sufficient ? 'sufficient' : 'not sufficient'}${d.notes ? ` — <span style="color:var(--fg-2)">${esc(d.notes)}</span>` : ''}${(d.retry_queries || []).length ? `<div class="meta">retry: ${esc(d.retry_queries.join(' · '))}</div>` : ''}</div>`;
+      if (e.name === 'ranker') return `<div style="margin-bottom:6px;font-size:11.5px"><span class="meta-mono">ranker${sub}</span>${bad} · picked ${(d.selected || []).length} of ${d.candidates}</div>`;
+      if (e.name === 'page_summarizer') return `<div style="font-size:11.5px"><span class="meta-mono">read</span> ${esc(shortUrl(d.url))} · ${d.relevant ? `${d.facts} facts` : 'not relevant'}${bad}</div>`;
+      return '';
+    }).join('');
+    if (parts.trim()) html += sec('Decisions', parts);
+  }
+
+  // Sources + output
+  const doms = m.source_domains || [];
+  if (doms.length) {
+    const max = Math.max(...doms.map(d => d[1]));
+    html += sec('Source domains', `<div class="bars-h">${doms.slice(0, 10).map(([d, n]) => `<div class="bar-row"><span class="l">${esc(d)}</span><span class="t"><span class="f" style="display:block;width:${(n / max * 100).toFixed(1)}%"></span></span><span class="v">${n}</span></div>`).join('')}</div>`);
+  }
+  if (out.sections) {
+    html += sec('Output sections', `<div class="sec-tags">${Object.entries(out.sections).map(([k, ok]) => `<span class="sec-tag${ok ? '' : ' miss'}">${esc(k)}</span>`).join('')}</div>`,
+      out.missing_sections?.length ? `${out.missing_sections.length} missing` : 'all present');
+  }
+
+  // Host
+  const h = m.host;
+  if (h) {
+    const hostEv = by('host')[0];
+    let chart = '';
+    if (hostEv && (hostEv.data.t || []).length > 1) {
+      const d = hostEv.data;
+      const W = 400, H = 60, maxT = Math.max(...d.t);
+      const line = (arr) => arr.map((v, i) => v == null ? null : `${(d.t[i] / maxT * W).toFixed(1)},${(H - v / 100 * H).toFixed(1)}`).filter(Boolean).join(' ');
+      chart = `<div class="chart" style="margin-top:8px"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:60px">
+        <line x1="0" y1="${H}" x2="${W}" y2="${H}" stroke="var(--axis)" stroke-width="1" vector-effect="non-scaling-stroke"/>
+        <line x1="0" y1="0" x2="${W}" y2="0" stroke="var(--grid)" stroke-width="1" vector-effect="non-scaling-stroke"/>
+        ${d.gpu ? `<polyline points="${line(d.gpu)}" fill="none" stroke="var(--ph-1)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
+        ${d.cpu ? `<polyline points="${line(d.cpu)}" fill="none" stroke="var(--ph-2)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
+      </svg><div class="legend"><span><i style="background:var(--ph-1)"></i>GPU busy %</span><span><i style="background:var(--ph-2)"></i>CPU %</span><span style="margin-left:auto" class="meta-mono">0–100% · every ${hostEv.data.interval_s}s</span></div></div>`;
+    }
+    html += sec('Machine', `<div class="tiles">
+      ${tileHTML('GPU busy', h.gpu_avg != null ? `${h.gpu_avg}% avg` : '—', h.gpu_max != null ? `max ${h.gpu_max}%` : '')}
+      ${tileHTML('CPU', h.cpu_avg != null ? `${h.cpu_avg}% avg` : '—', h.cpu_max != null ? `max ${h.cpu_max}%` : '')}
+      ${tileHTML('Temps max', h.gpu_c_max != null ? `${Math.round(h.gpu_c_max)}°C GPU` : '—', [h.cpu_c_max != null && `CPU ${Math.round(h.cpu_c_max)}°C`, h.nvme_c_max != null && `NVMe ${Math.round(h.nvme_c_max)}°C`].filter(Boolean).join(' · '))}
+      ${tileHTML('Memory', h.mem_avail_min != null ? `${fmtBytes(h.mem_avail_min)} free` : '—', h.gtt_max != null ? `GTT max ${fmtBytes(h.gtt_max)}` : '')}
+    </div>${chart}`, `${h.samples} samples`);
+  }
+
+  // Config / build / notify
+  const cfg = by('config')[0];
+  const kv = [];
+  if (m.model) kv.push(['model', m.model]);
+  if (m.build?.commit) kv.push(['code', m.build.commit + (m.build.dirty ? ' (uncommitted changes)' : '')]);
+  if (run.trigger) kv.push(['trigger', run.trigger]);
+  if (run.scheduled_for) kv.push(['scheduled', fmtTime(run.scheduled_for)]);
+  if (m.notify) kv.push(['notification', m.notify.sent ? `sent (HTTP ${m.notify.status}, ${fmtMs(m.notify.ms)})` : 'not sent']);
+  if (cfg) {
+    const env = cfg.data.env || {};
+    for (const k of ['CONTEXT_BUDGET', 'NUM_CTX', 'SYNTHESIZER_MAX_TOKENS', 'TEMPERATURE', 'TIMEOUT']) if (env[k]) kv.push([k.toLowerCase(), env[k]]);
+    if (env.search_providers) kv.push(['search providers', env.search_providers.join(', ')]);
+  }
+  if (kv.length) {
+    html += sec('Setup', `<dl class="kv">${kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(String(v))}</dd>`).join('')}</dl>
+      ${cfg ? `<details style="margin-top:6px"><summary class="meta-mono" style="cursor:pointer;font-size:10.5px">agent config + prompt versions</summary><pre class="pl-pre">${esc(JSON.stringify({ agent: cfg.data.agent, prompts: cfg.data.prompts, output_template_sha: cfg.data.output_template_sha, env: cfg.data.env }, null, 2))}</pre></details>` : ''}`);
+  }
+
+  // Raw events
+  if (ev.length) {
+    html += sec('All events', ev.map(e => `<details class="ev"><summary><span class="k">${String(e.t_ms).padStart(6)}ms ${esc(e.kind)}</span><span class="n">${esc(e.phase || '')} ${esc(e.name || '')}</span><span class="${e.ok ? '' : 'err'}">${e.duration_ms != null ? fmtMs(e.duration_ms) : ''}${e.ok ? '' : ' ✕'}</span></summary><pre class="pl-pre">${esc(JSON.stringify({ ...e, has_payload: undefined }, null, 2))}</pre></details>`).join(''), `${ev.length}`);
+  }
+  return html;
+}
+
+// ── SVG chart helpers ──
+// Axis ticks on clean values: counts in whole steps, durations in whole time units.
+const DUR_STEPS = [100, 250, 500, 1e3, 2e3, 5e3, 1e4, 15e3, 3e4, 6e4, 12e4, 3e5, 6e5, 9e5, 18e5, 36e5];
+function axisTicks(maxVal, kind) {
+  const target = Math.max(maxVal, kind === 'count' ? 1 : 0) / 3 || 1;
+  let step;
+  if (kind === 'ms') step = DUR_STEPS.find(v => v >= target) || DUR_STEPS[DUR_STEPS.length - 1];
+  else {
+    const p = Math.pow(10, Math.floor(Math.log10(target)));
+    step = [1, 2, 2.5, 5, 10].map(m => m * p).find(v => v >= target);
+    if (kind === 'count') step = Math.max(1, Math.ceil(step));
+  }
+  const max = step * Math.max(1, Math.ceil(maxVal / step));
+  const ticks = [];
+  for (let v = 0; v <= max + step / 2; v += step) ticks.push(v);
+  return { max, ticks };
+}
+// Rect with 4px rounded top corners, square at the baseline.
+function topRoundedPath(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h);
+  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+}
+// cols: [{ label, values: {seriesKey: n}, tip, onclick }]; series: [{ key, label, color }]; fmtY: tick formatter
+function stackedColumnsSVG(width, height, cols, series, fmtY, kind) {
+  const L = 44, R = 6, T = 8, B = 20;
+  const pw = width - L - R, ph = height - T - B;
+  const totals = cols.map(c => series.reduce((a, s) => a + (c.values[s.key] || 0), 0));
+  const { max, ticks } = axisTicks(Math.max(0, ...totals), kind);
+  const band = pw / Math.max(1, cols.length);
+  const bw = Math.max(2, Math.min(24, band * 0.7));
+  const y = v => T + ph - v / max * ph;
+  let g = '';
+  ticks.forEach((v, i) => {
+    const yy = y(v);
+    g += `<line x1="${L}" x2="${width - R}" y1="${yy}" y2="${yy}" stroke="${i === 0 ? 'var(--axis)' : 'var(--grid)'}" stroke-width="1"/>`;
+    g += `<text x="${L - 6}" y="${yy + 3}" text-anchor="end">${esc(fmtY(v))}</text>`;
+  });
+  const every = Math.ceil(cols.length / Math.max(1, Math.floor(pw / 46)));
+  cols.forEach((c, i) => {
+    const x = L + band * i + (band - bw) / 2;
+    let acc = 0;
+    const segs = series.filter(s => c.values[s.key] > 0);
+    let marks = '';
+    segs.forEach((s, j) => {
+      const v = c.values[s.key];
+      const y0 = y(acc), y1 = y(acc + v);
+      const top = j === segs.length - 1;
+      const h = Math.max(1, y0 - y1 - (j > 0 ? 2 : 0)); // 2px surface gap between stacked segments
+      marks += top ? `<path class="mk" d="${topRoundedPath(x, y1, bw, h, 4)}" fill="${s.color}"/>` : `<rect class="mk" x="${x}" y="${y1}" width="${bw}" height="${h}" fill="${s.color}"/>`;
+      acc += v;
+    });
+    g += `<g class="hit" tabindex="0" data-tip="${esc(c.tip)}"${c.onclick ? ` onclick="${c.onclick}" role="button"` : ''}><rect x="${L + band * i}" y="${T}" width="${band}" height="${ph}" fill="transparent"/>${marks}</g>`;
+    if (i % every === 0) g += `<text x="${x + bw / 2}" y="${height - 5}" text-anchor="middle">${esc(c.label)}</text>`;
+  });
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img">${g}</svg>`;
+}
+function scatterSVG(width, height, pts, fmtX, fmtY) {
+  const L = 44, R = 10, T = 10, B = 22;
+  const pw = width - L - R, ph = height - T - B;
+  const ax = axisTicks(Math.max(0, ...pts.map(p => p.x)), 'num'), ay = axisTicks(Math.max(0, ...pts.map(p => p.y)), 'ms');
+  const mx = ax.max, my = ay.max;
+  const X = v => L + v / mx * pw, Y = v => T + ph - v / my * ph;
+  let g = '';
+  ay.ticks.forEach((v, i) => {
+    g += `<line x1="${L}" x2="${width - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="${i === 0 ? 'var(--axis)' : 'var(--grid)'}" stroke-width="1"/>`;
+    g += `<text x="${L - 6}" y="${Y(v) + 3}" text-anchor="end">${esc(fmtY(v))}</text>`;
+  });
+  ax.ticks.forEach((v, i) => {
+    g += `<text x="${X(v)}" y="${height - 6}" text-anchor="${i === 0 ? 'start' : i === ax.ticks.length - 1 ? 'end' : 'middle'}">${esc(fmtX(v))}</text>`;
+  });
+  pts.forEach(p => {
+    g += `<g class="hit" tabindex="0" data-tip="${esc(p.tip)}"${p.onclick ? ` onclick="${p.onclick}" role="button"` : ''}><circle cx="${X(p.x)}" cy="${Y(p.y)}" r="10" fill="transparent"/><circle class="mk" cx="${X(p.x)}" cy="${Y(p.y)}" r="4.5" fill="${p.color || 'var(--ph-1)'}" stroke="var(--panel)" stroke-width="2"/></g>`;
+  });
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img">${g}</svg>`;
+}
+
+// ── Dashboard tab ──
+let dashDays = 7;
+let dashResizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(dashResizeTimer);
+  dashResizeTimer = setTimeout(() => { if (document.querySelector('.dash')) drawDashCharts(); }, 150);
+});
+function setDashDays(n) { dashDays = n; renderDashboard(); }
+function runName(r) {
+  const d = r.dispatch_id && allDispatches.find(x => x.id === r.dispatch_id);
+  return d ? dispatchLabel(d, 32) : (allAgents.find(a => a.name === r.agent)?.label || r.agent || 'run');
+}
+
+let dashData = null;
+async function renderDashboard() {
+  const el = document.getElementById('content');
+  if (!statsCache[dashDays]) el.innerHTML = `<div class="empty-state">Loading…</div>`;
+  const st = await loadStats(dashDays);
+  if (!(isMobile() ? mobileTab === 'stats' : dispatchTab === 'dashboard')) return;
+  if (!st) { el.innerHTML = `<div class="empty-state">Could not load stats.</div>`; return; }
+  dashData = st;
+  const runs = st.runs.filter(r => r.status);
+  const k = st.kpi;
+  const active = allDispatches.filter(c => c.enabled);
+  const soonest = active.map(c => ({ c, t: nextRun(c.schedule, null, c.timezone) })).filter(x => x.t).sort((a, b) => a.t - b.t)[0];
+  const needLook = runs.filter(r => runTone(r.status, r.sources) !== 'good').length;
+  const range = `<div class="dash-bar">
+    <div style="display:inline-grid;grid-template-columns:1fr 1fr;background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:3px;gap:2px">
+      <button class="seg-btn${dashDays === 7 ? ' active' : ''}" onclick="setDashDays(7)">7 days</button>
+      <button class="seg-btn${dashDays === 30 ? ' active' : ''}" onclick="setDashDays(30)">30 days</button>
+    </div>
+    <span class="meta">${runs.length} runs${runs.some(r => r.metrics_source === 'backfill') ? ' · older runs reconstructed from logs' : ''}</span>
+  </div>`;
+  const kpis = `<div class="kpis">
+    <div class="card"><div class="tile-l">Runs</div><div class="kpi-v">${k.runs}</div><div class="kpi-s">last ${dashDays} days</div></div>
+    <div class="card"><div class="tile-l">Success</div><div class="kpi-v">${k.success_pct != null ? k.success_pct + '%' : '—'}</div><div class="kpi-s">${needLook ? `${needLook} need a look` : 'all clean'}</div></div>
+    <div class="card"><div class="tile-l">Median duration</div><div class="kpi-v">${k.median_ms ? fmtDuration(k.median_ms) : '—'}</div><div class="kpi-s">per run</div></div>
+    <div class="card"><div class="tile-l">Next run</div><div class="kpi-v">${soonest ? esc(relTime(soonest.t)) : '—'}</div><div class="kpi-s">${soonest ? esc(dispatchLabel(soonest.c, 28)) : ''}</div></div>
+  </div>`;
+
+  // Week grid: dispatch rows × days
+  const days = lastDays(dashDays);
+  const rowsById = new Map();
+  for (const c of active) rowsById.set(c.id, { name: dispatchLabel(c, 34), agent: c.agent, runs: [] });
+  for (const r of runs) {
+    const key = r.dispatch_id && rowsById.has(r.dispatch_id) ? r.dispatch_id : (r.dispatch_id ? r.dispatch_id : 'other');
+    if (!rowsById.has(key)) rowsById.set(key, { name: key === 'other' ? 'Manual / other' : runName(r), runs: [] });
+    rowsById.get(key).runs.push(r);
+  }
+  const dayHead = days.map(d => `<th>${dashDays === 7 ? d.date.toLocaleDateString('en-US', { weekday: 'short' }) : (d.date.getDate() === 1 || d === days[0] ? d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : d.date.getDate())}</th>`).join('');
+  const gridRows = [...rowsById.values()].filter(row => row.runs.length || row.agent).map(row => {
+    const cells = days.map(d => {
+      const dayRuns = row.runs.filter(r => localDayKey(new Date(r.started_at)) === d.key);
+      if (!dayRuns.length) return `<td class="c"></td>`;
+      const tipOf = r => `${fmtTime(r.started_at)} · ${statusText(r.status, r.sources)}${r.sources != null ? `\n${r.sources} sources` : ''}${r.run_ms ? `\n${fmtDuration(r.run_ms)}` : ''}${r.missing_sections?.length ? `\nmissing: ${r.missing_sections.join(', ')}` : ''}`;
+      if (dashDays > 7) {
+        const worst = dayRuns.reduce((a, r) => TONE_RANK[runTone(r.status, r.sources)] > TONE_RANK[a] ? runTone(r.status, r.sources) : a, 'none');
+        const last = dayRuns[dayRuns.length - 1];
+        return `<td class="c"><button class="dot t-${worst}" data-tip="${esc(`${row.name} · ${d.date.toLocaleDateString()}\n${dayRuns.length} run${dayRuns.length > 1 ? 's' : ''}\n` + dayRuns.map(r => statusText(r.status, r.sources)).join(', '))}" aria-label="${dayRuns.length} runs" onclick="openRunDrawer(${last.id})"></button></td>`;
+      }
+      return `<td class="c">${dayRuns.map(r => `<button class="dot t-${runTone(r.status, r.sources)}" data-tip="${esc(row.name + '\n' + tipOf(r))}" aria-label="${esc(statusText(r.status, r.sources))}" onclick="openRunDrawer(${r.id})"></button>`).join('')}</td>`;
+    }).join('');
+    return `<tr><td class="rl" title="${esc(row.name)}">${esc(row.name)}</td>${cells}</tr>`;
+  }).join('');
+  const statusLegend = `<div class="legend">${STATUS_SERIES.map(s => `<span><i style="background:${s.color};border-radius:50%"></i>${s.label}</span>`).join('')}</div>`;
+
+  const provRows = Object.entries(st.providers).filter(([, p]) => p.calls).sort((a, b) => b[1].hits - a[1].hits).map(([n, p]) =>
+    `<tr><td>${esc(n)}</td><td class="r">${p.calls}</td><td class="r">${(p.hits / Math.max(1, p.ok)).toFixed(1)}</td><td class="r${p.errors ? ' err' : ''}">${p.errors ? Math.round(p.errors / p.calls * 100) + '%' : '0%'}</td><td class="r">${p.ms ? fmtMs(Math.round(p.ms / p.calls)) : '—'}</td></tr>`).join('');
+  const dmax = Math.max(1, ...st.domains.map(d => d[1]));
+  const domRows = st.domains.map(([d, n]) => `<div class="bar-row"><span class="l" title="${esc(d)}">${esc(d)}</span><span class="t"><span class="f" style="display:block;width:${(n / dmax * 100).toFixed(1)}%"></span></span><span class="v">${n}</span></div>`).join('');
+
+  el.innerHTML = `<div class="dash">${range}${kpis}<div class="dash-grid">
+    <div class="card wide"><div class="card-h">Runs by dispatch</div><div class="card-s">Each dot is a run, colored by outcome; click to open it.</div>
+      <div style="overflow-x:auto"><table class="wgrid"><thead><tr><th class="rl"></th>${dayHead}</tr></thead><tbody>${gridRows || `<tr><td class="meta">No runs in range.</td></tr>`}</tbody></table></div>${statusLegend}</div>
+    <div class="card"><div class="card-h">Runs per day</div><div class="card-s">By outcome</div><div class="chart" id="ch-daily"></div>${statusLegend}</div>
+    <div class="card"><div class="card-h">Where the time goes</div><div class="card-s">Last 30 runs, duration by phase; click a column to open the run.</div><div class="chart" id="ch-phases"></div>
+      <div class="legend">${PHASES.map(p => `<span><i style="background:${p.color}"></i>${p.label}</span>`).join('')}</div></div>
+    <div class="card"><div class="card-h">Synthesizer input vs time</div><div class="card-s">Characters sent to the synthesizer against its duration, one dot per run.</div><div class="chart" id="ch-synth"></div></div>
+    <div class="card"><div class="card-h">Search providers</div><div class="card-s">Calls, hits per successful call, error rate, average latency</div>
+      ${provRows ? `<table class="mt"><thead><tr><th>Provider</th><th class="r">Calls</th><th class="r">Hits/call</th><th class="r">Errors</th><th class="r">Avg</th></tr></thead><tbody>${provRows}</tbody></table>` : '<div class="meta">No searches in range.</div>'}</div>
+    <div class="card"><div class="card-h">Top source domains</div><div class="card-s">Sources that reached the synthesizer</div>${domRows ? `<div class="bars-h">${domRows}</div>` : '<div class="meta">No source data in range.</div>'}</div>
+  </div></div>`;
+  drawDashCharts();
+}
+
+function drawDashCharts() {
+  if (!dashData) return;
+  const runs = dashData.runs.filter(r => r.status);
+  const days = lastDays(dashDays);
+  const daily = document.getElementById('ch-daily');
+  if (daily) {
+    const cols = days.map(d => {
+      const v = { good: 0, warn: 0, crit: 0, none: 0 };
+      runs.filter(r => localDayKey(new Date(r.started_at)) === d.key).forEach(r => { v[runTone(r.status, r.sources)]++; });
+      const total = v.good + v.warn + v.crit + v.none;
+      return {
+        label: dashDays === 7 ? d.date.toLocaleDateString('en-US', { weekday: 'short' }) : String(d.date.getDate()),
+        values: v,
+        tip: `${total} run${total === 1 ? '' : 's'} · ${d.date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}\n` + STATUS_SERIES.filter(s => v[s.key]).map(s => `${s.label}: ${v[s.key]}`).join('\n'),
+      };
+    });
+    daily.innerHTML = stackedColumnsSVG(daily.clientWidth || 400, 170, cols, STATUS_SERIES, v => String(Math.round(v)), 'count');
+  }
+  const phases = document.getElementById('ch-phases');
+  if (phases) {
+    const recent = runs.filter(r => r.phases && Object.keys(r.phases).length).slice(-30);
+    const cols = recent.map(r => {
+      const g = phaseGroups(r.phases);
+      return {
+        label: new Date(r.started_at).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' }),
+        values: g,
+        tip: `${runName(r)} · ${fmtTime(r.started_at)}\n${r.run_ms ? 'total ' + fmtDuration(r.run_ms) + '\n' : ''}` + PHASES.filter(p => g[p.key]).map(p => `${p.label}: ${fmtDuration(g[p.key])}`).join('\n'),
+        onclick: `openRunDrawer(${r.id})`,
+      };
+    });
+    phases.innerHTML = cols.length ? stackedColumnsSVG(phases.clientWidth || 400, 170, cols, PHASES, v => v ? fmtDuration(v) : '0', 'ms') : '<div class="meta">No phase timings in range.</div>';
+  }
+  const synth = document.getElementById('ch-synth');
+  if (synth) {
+    const pts = runs.filter(r => r.synth_chars && r.synth_ms).map(r => ({
+      x: r.synth_chars, y: r.synth_ms,
+      tip: `${fmtDuration(r.synth_ms)} · ${fmtCompact(r.synth_chars)} chars\n${runName(r)} · ${fmtTime(r.started_at)}${r.tokens?.[0] ? `\n${fmtCompact(r.tokens[0])} tokens in (whole run)` : ''}`,
+      onclick: `openRunDrawer(${r.id})`,
+    }));
+    synth.innerHTML = pts.length ? scatterSVG(synth.clientWidth || 400, 170, pts, v => fmtCompact(v), v => v ? fmtDuration(v) : '0') : '<div class="meta">No synthesizer data in range.</div>';
+  }
+}
+
+// ── Active table: per-dispatch stats from /api/stats ──
+let activeSort = { key: 'next', dir: 1 };
+let activeQuery = '';
+function dispatchRunStats(id, runs) {
+  const mine = runs.filter(r => r.dispatch_id === id && r.status);
+  const done = mine.filter(r => r.status === 'done').length;
+  const durs = mine.map(r => r.run_ms).filter(Boolean);
+  const days = lastDays(7).map(d => {
+    const dr = mine.filter(r => localDayKey(new Date(r.started_at)) === d.key);
+    const tone = dr.reduce((a, r) => TONE_RANK[runTone(r.status, r.sources)] > TONE_RANK[a] ? runTone(r.status, r.sources) : a, 'none');
+    return { d, n: dr.length, tone: dr.length ? tone : null };
+  });
+  return {
+    runs: mine.length,
+    success: mine.length ? done / mine.length : null,
+    avgMs: durs.length ? durs.reduce((a, b) => a + b, 0) / durs.length : null,
+    days,
+  };
+}
+function statusSparkHTML(days) {
+  return `<span class="spark">${days.map(x => `<span class="spark-bar t-${x.tone || 'none'}" style="height:${x.n ? 14 : 3}px" data-tip="${esc(`${x.d.date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}\n${x.n ? `${x.n} run${x.n > 1 ? 's' : ''} · ${STATUS_SERIES.find(s => s.key === x.tone)?.label || ''}` : 'no runs'}`)}"></span>`).join('')}</span>`;
+}
+function sortActive(key) {
+  activeSort = activeSort.key === key ? { key, dir: -activeSort.dir } : { key, dir: key === 'name' || key === 'agent' || key === 'next' ? 1 : -1 };
+  renderContent();
+}
+function filterActive(q) {
+  activeQuery = q;
+  renderActiveRows();
+}
+
+let activeRowsData = [];
+let activeKind = 'active';
+function renderDispatchesTable(dispatches, kind) {
+  const el = document.getElementById('content');
+  if (!dispatches.length) {
+    el.innerHTML = `<div class="empty-state">${kind === 'active' ? 'No active agents.' : 'No archived agents.'}</div>`;
+    return;
+  }
+  const st = statsCache[30]?.data;
+  if (!statsCache[30] || Date.now() - statsCache[30].at > 60000) {
+    loadStats(30).then(d => { if (d && d !== st && !isMobile() && dispatchTab === kind) renderContent(); });
+  }
+  const runs = st?.runs || [];
+  activeKind = kind;
+  activeRowsData = dispatches.map(c => ({ c, st: dispatchRunStats(c.id, runs), next: kind === 'active' ? nextRun(c.schedule, null, c.timezone) : null }));
+  const th = (key, label, cls) => `<th class="sort${cls ? ' ' + cls : ''}" onclick="sortActive('${key}')" aria-sort="${activeSort.key === key ? (activeSort.dir > 0 ? 'ascending' : 'descending') : 'none'}">${label}<span class="arr">${activeSort.key === key ? (activeSort.dir > 0 ? '▲' : '▼') : ''}</span></th>`;
+  el.innerHTML = `<div style="padding:16px 24px 80px">
+    <div class="tbl-bar"><input class="input" placeholder="Filter by name, agent or prompt" value="${esc(activeQuery)}" oninput="filterActive(this.value)" aria-label="Filter dispatches"><span class="meta" id="tbl-count"></span>
+      <span class="meta" style="margin-left:auto">Success and average over 30 days</span></div>
+    <div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow-x:auto">
+      <table class="agents-table">
+        <thead><tr style="background:var(--panel-2)">
+          ${th('agent', 'Agent')}${th('name', 'Dispatch')}${kind === 'active' ? th('next', 'Next run') : '<th>Schedule</th>'}${th('last', 'Last run')}
+          ${th('runs', 'Runs', 'r')}${th('success', 'Success', 'r')}${th('avg', 'Avg', 'r')}<th class="r">${kind === 'active' ? 'Last 7' : 'Status'}</th><th class="r">Actions</th>
+        </tr></thead>
+        <tbody id="dispatch-rows"></tbody>
+      </table>
+    </div>
+  </div>`;
+  renderActiveRows();
+}
+
+function renderActiveRows() {
+  const tb = document.getElementById('dispatch-rows');
+  if (!tb) return;
+  const kind = activeKind;
+  const q = activeQuery.trim().toLowerCase();
+  const rows = activeRowsData.filter(x => !q || [dispatchLabel(x.c, 80), x.c.agent, x.c.prompt, allAgents.find(a => a.name === x.c.agent)?.label]
+    .some(v => (v || '').toLowerCase().includes(q)));
+  const val = x => {
+    switch (activeSort.key) {
+      case 'name': return dispatchLabel(x.c, 80).toLowerCase();
+      case 'agent': return (allAgents.find(a => a.name === x.c.agent)?.label || x.c.agent || '').toLowerCase();
+      case 'next': return x.next ? x.next.getTime() : Infinity;
+      case 'last': return x.c.last_started_at ? Date.parse(x.c.last_started_at) : 0;
+      case 'runs': return x.c.run_count || 0;
+      case 'success': return x.st.success ?? -1;
+      case 'avg': return x.st.avgMs ?? -1;
+    }
+    return 0;
+  };
+  rows.sort((a, b) => { const va = val(a), vb = val(b); return (va < vb ? -1 : va > vb ? 1 : 0) * activeSort.dir; });
+  const cnt = document.getElementById('tbl-count');
+  if (cnt) cnt.textContent = q ? `${rows.length} of ${activeRowsData.length}` : '';
+
+  const playIcon = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="none"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor"/></svg>`;
+  const editIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16v4z"/><line x1="14" y1="6" x2="18" y2="10"/></svg>`;
+  const archIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><line x1="10" y1="13" x2="14" y2="13"/></svg>`;
+  const trashIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 20 7"/><path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>`;
+
+  tb.innerHTML = rows.map(({ c, st }) => {
+    const runs = c.max_runs ? `${c.run_count}/${c.max_runs}` : `${c.run_count}`;
+    const actions = kind === 'active'
+      ? `<button class="btn btn-sm" title="Run now" onclick="event.stopPropagation();runDispatchNow(${c.id})">${playIcon}</button>
+         <button class="btn btn-sm" onclick="event.stopPropagation();openAgentSheet(${c.id})">${editIcon} Edit</button>
+         <button class="btn btn-ghost btn-sm" title="Archive" onclick="event.stopPropagation();toggleDispatch(${c.id},false)">${archIcon}</button>`
+      : `<button class="btn btn-sm" onclick="event.stopPropagation();toggleDispatch(${c.id},true)">Enable</button>
+         <button class="btn btn-ghost btn-sm btn-danger" title="Delete" onclick="event.stopPropagation();deleteDispatch(${c.id})">${trashIcon}</button>`;
+    const schedCell = kind === 'active' ? nextRunCellHTML(c.schedule, c.timezone) : `<span class="meta-mono">${esc(humanizeCron(c.schedule, c.timezone))}</span>`;
+    const lastCell = c.last_session_id
+      ? `<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-start">
+           ${c.last_status ? metricsChipHTML(c.last_status, c.last_sources, c.last_run_ms, { onclick: `event.stopPropagation();openRunDrawer(${c.last_session_id})` }).replace(/ [▾▴]<\/button>$/, '</button>') : `<button class="mchip t-none" onclick="event.stopPropagation();openRunDrawer(${c.last_session_id})">open</button>`}
+           <span class="meta-mono" style="font-size:10.5px">${esc(fmtRelTime(c.last_started_at))}</span></div>`
+      : '<span class="meta">—</span>';
+    return `<tr onclick="openAgentSheet(${c.id})">
+      <td>${pillHTML(c.agent)}</td>
+      <td><div style="font-weight:500">${esc(dispatchLabel(c, 40))}</div><div style="color:var(--fg-3);font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.prompt)}</div></td>
+      <td>${schedCell}</td>
+      <td>${lastCell}</td>
+      <td class="r"><span class="mono" style="color:var(--fg-2)">${runs}</span></td>
+      <td class="r"><span class="mono" style="color:var(--fg-2)">${st.success != null ? Math.round(st.success * 100) + '%' : '—'}</span></td>
+      <td class="r"><span class="mono" style="color:var(--fg-2)">${st.avgMs ? fmtDuration(Math.round(st.avgMs)) : '—'}</span></td>
+      <td class="r">${kind === 'active' ? statusSparkHTML(st.days) : statusBadgeHTML('archived')}</td>
+      <td class="r"><div style="display:inline-flex;gap:4px" onclick="event.stopPropagation()">${actions}</div></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="9" class="meta" style="padding:16px">No matches.</td></tr>`;
+}
+
+// ── Sidebar collapse ──
+function setSidebarCollapsed(collapsed) {
+  document.getElementById('app').classList.toggle('sb-collapsed', collapsed);
+  try { localStorage.setItem('dispatch-sidebar-collapsed', collapsed ? '1' : '0'); } catch {}
+  if (!collapsed && document.querySelector('.dash')) drawDashCharts();
 }
 
 // ── Agent Sheet ──
@@ -2027,8 +2812,9 @@ async function refreshOpenRun() {
 }
 
 async function jobsFinished(jobs) {
+  invalidateStats();
   await Promise.all([loadSessions(), loadDigest(), loadDispatches()]);
-  if (dispatchTab === 'digest' || mobileTab === 'digest') renderDispatch();
+  if (['digest', 'dashboard', 'active'].includes(dispatchTab) || ['digest', 'stats'].includes(mobileTab)) renderDispatch();
   if (jobs.some(j => j.session_id === runDrawerSessionId)) refreshedFinishedSession = null;
   if (jobs.length > 1) {
     setStatus(`${jobs.length} runs finished`, { label: 'View', fn: () => isMobile() ? setMobileTab('runs') : setSidebarMode('runs') });
@@ -2565,6 +3351,7 @@ document.addEventListener('keydown', e => {
   isDark = saved !== 'light';
   if (!isDark) document.body.classList.add('theme-light');
   updateThemeBtn();
+  try { if (localStorage.getItem('dispatch-sidebar-collapsed') === '1') document.getElementById('app').classList.add('sb-collapsed'); } catch {}
 
   refreshAll().then(() => {
     if (window.innerWidth <= 640) setMobileTab('digest');

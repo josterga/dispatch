@@ -499,8 +499,13 @@ def get_dispatches(enabled_only: bool = False) -> list[dict]:
                    SELECT 1 FROM sessions WHERE dispatch_id = d.id AND DATE(started_at) = DATE('now')
                ) THEN '1' ELSE '0' END
              )
-            ) AS last_7_days
+            ) AS last_7_days,
+            ls.id AS last_session_id, ls.started_at AS last_started_at,
+            json_extract(ls.metrics, '$.status')        AS last_status,
+            json_extract(ls.metrics, '$.sources')       AS last_sources,
+            json_extract(ls.metrics, '$.timing.run_ms') AS last_run_ms
         FROM dispatches d
+        LEFT JOIN sessions ls ON ls.id = (SELECT MAX(id) FROM sessions WHERE dispatch_id = d.id AND ended_at IS NOT NULL)
         {where}
         ORDER BY d.id DESC
     """).fetchall()
