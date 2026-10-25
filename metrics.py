@@ -23,9 +23,10 @@ import requests
 
 import db
 
-METRICS_VERSION = 1
+METRICS_VERSION = 2  # 2: self-checks (degraded, checks)
 PAYLOAD_RETENTION_DAYS = int(os.getenv("PAYLOAD_RETENTION_DAYS", "30"))
 HOST_SAMPLE_SECONDS = float(os.getenv("HOST_SAMPLE_SECONDS", "5"))
+SLOW_FACTOR = float(os.getenv("CHECK_SLOW_FACTOR", "3"))  # slower than this × the dispatch's median = degraded
 _RELOAD_MS = 1000           # load_duration above this = the model was (re)loaded for the call
 _CTX_NEAR_FULL = 0.95       # prompt tokens >= 95% of num_ctx = input probably cut by Ollama
 
@@ -298,6 +299,15 @@ class RunRecorder:
         except Exception as e:
             print(f"[metrics] WARNING: could not write events ({type(e).__name__}: {e})")
 
+    def evaluate(self, status: str, output: Optional[str], error: Optional[BaseException] = None) -> dict:
+        """Rollup + self-checks of everything recorded so far (used before notifying, then again at finish)."""
+        self.mark_ended()
+        if error is not None and "error" not in self.run:
+            self.run["error"] = {"type": type(error).__name__, "message": str(error)[:2000], "phase": self.current_phase}
+        metrics = rollup(self.events, self.run, status, output, self.config, self._sampler.summary())
+        apply_checks(metrics, self.session_id)
+        return metrics
+
     def finish(self, status: str, output: Optional[str], error: Optional[BaseException] = None) -> dict:
         self._sampler.stop()
         self.event("ollama_ps", name="end", models=ollama_ps())
@@ -305,11 +315,8 @@ class RunRecorder:
         if samples:
             self.event("host", name="samples", interval_s=HOST_SAMPLE_SECONDS,
                        **{k: [s.get(k) for s in samples] for k in samples[0]})
-        self.mark_ended()
-        if error is not None:
-            self.run["error"] = {"type": type(error).__name__, "message": str(error)[:2000], "phase": self.current_phase}
         self.flush()
-        metrics = rollup(self.events, self.run, status, output, self.config, self._sampler.summary())
+        metrics = self.evaluate(status, output, error)
         try:
             db.set_session_metrics(self.session_id, metrics)
             db.purge_run_payloads(PAYLOAD_RETENTION_DAYS)
@@ -335,6 +342,9 @@ class _NullRecorder:
 
     def mark_ended(self) -> None:
         pass
+
+    def evaluate(self, *a, **k) -> None:
+        return None
 
     def flush(self) -> None:
         pass
@@ -540,7 +550,8 @@ def rollup(events: list[dict], run: dict, status: str, output: Optional[str],
         for k in breakdown:
             breakdown[k] += d.get(k) or 0
         source_urls.update(d.get("urls") or [])
-    sources = len(source_urls) + breakdown["inbox_items"]
+    # None when the run never got to the synthesizer (e.g. failed earlier): unknown, not zero.
+    sources = len(source_urls) + breakdown["inbox_items"] if synth_inputs else None
     source_domains: dict[str, int] = {}
     for u in source_urls:
         dm = _domain(u)
@@ -554,6 +565,8 @@ def rollup(events: list[dict], run: dict, status: str, output: Optional[str],
         "prompt_tokens": sum(e["data"].get("prompt_tokens") or 0 for e in synth_llm),
         "output_tokens": sum(e["data"].get("output_tokens") or 0 for e in synth_llm),
         "ms": sum(e["duration_ms"] or 0 for e in synth_llm),
+        "output_cut_off": sum(1 for e in synth_llm if e["data"].get("truncated")),
+        "ctx_near_full": sum(1 for e in synth_llm if e["data"].get("ctx_near_full")),
     } if synth_inputs else None
 
     # Output
@@ -599,6 +612,89 @@ def rollup(events: list[dict], run: dict, status: str, output: Optional[str],
         "hit_domains": sorted(hit_domains.items(), key=lambda kv: -kv[1])[:20],
         "events": len(events),
     }
+
+
+# ── Self-checks (rule-based, no LLM) ──────────────────────────────────────────
+
+def run_checks(m: dict, median_ms: Optional[int]) -> list[dict]:
+    """Rules that mark a finished, non-error run as degraded. Each hit: {rule, detail}."""
+    hits: list[dict] = []
+    if m.get("status") not in ("done", "empty"):
+        return hits
+
+    def hit(rule: str, detail: str) -> None:
+        hits.append({"rule": rule, "detail": detail})
+
+    if m.get("status") == "empty":
+        hit("empty_output", "the pipeline produced no answer")
+    if m.get("sources") == 0:
+        inbox = m.get("inbox")
+        hit("no_sources", "nothing new in the inbox" if inbox is not None else "no sources reached the synthesizer")
+    search = m.get("search") or {}
+    if search.get("queries") and search.get("failed_queries") == search.get("queries"):
+        hit("search_failed", f"all {search['queries']} searches failed")
+    elif search.get("providers") and not any(p.get("ok") for p in search["providers"].values()) and any(p.get("calls") for p in search["providers"].values()):
+        hit("search_failed", "no search provider answered")
+    fetch = m.get("fetch") or {}
+    if fetch.get("pages") and not fetch.get("ok"):
+        hit("fetch_failed", f"all {fetch['pages']} fetches failed")
+    synth = m.get("synth") or {}
+    if synth.get("output_cut_off"):
+        hit("output_cut_off", "the synthesizer hit its output token cap")
+    if synth.get("hard_truncated"):
+        hit("input_truncated", "research was cut to fit the synthesizer input limit")
+    if synth.get("ctx_near_full"):
+        hit("context_full", "the synthesizer prompt filled the context window (Ollama drops the overflow)")
+    missing = (m.get("output") or {}).get("missing_sections")
+    if missing and m.get("status") == "done":
+        hit("missing_sections", "missing: " + ", ".join(missing))
+    run_ms = (m.get("timing") or {}).get("run_ms")
+    if median_ms and run_ms and run_ms > SLOW_FACTOR * median_ms:
+        hit("slow", f"{run_ms // 1000}s vs a median of {median_ms // 1000}s")
+    return hits
+
+
+def apply_checks(m: dict, session_id: Optional[int], use_history: bool = True) -> dict:
+    median = None
+    dispatch_id = (m.get("run") or {}).get("dispatch_id")
+    if use_history and dispatch_id:
+        try:
+            prior = sorted(db.recent_run_ms(dispatch_id, exclude_session=session_id))
+            if len(prior) >= 3:
+                median = prior[len(prior) // 2]
+        except Exception:
+            pass
+    m["checks"] = run_checks(m, median)
+    m["degraded"] = bool(m["checks"])
+    m["median_ms"] = median
+    m["v"] = METRICS_VERSION
+    return m
+
+
+def refresh_checks() -> int:
+    """Add self-checks to runs whose metrics predate them."""
+    n = 0
+    for row in db.sessions_needing_checks():
+        try:
+            db.set_session_metrics(row["id"], apply_checks(row["metrics"], row["id"]))
+            n += 1
+        except Exception as e:
+            print(f"[metrics] check refresh skipped session {row['id']} ({type(e).__name__}: {e})")
+    if n:
+        print(f"[metrics] self-checks added to {n} sessions")
+    return n
+
+
+def problem_note(m: Optional[dict]) -> Optional[str]:
+    """One line for a notification when a run needs a look, else None."""
+    if not m:
+        return None
+    if m.get("status") == "error":
+        err = (m.get("run") or {}).get("error") or {}
+        return f"Failed: {err.get('type', 'error')}: {err.get('message', '')}"[:300]
+    if m.get("degraded"):
+        return "Degraded: " + "; ".join(c["detail"] for c in m["checks"])
+    return None
 
 
 # ── Backfill (runs recorded before metrics existed: parse their logs) ─────────
@@ -685,12 +781,13 @@ def backfill() -> int:
     for session in db.sessions_without_metrics():
         try:
             detail = db.get_session_detail(session["id"])
-            db.set_session_metrics(session["id"], metrics_from_logs(detail, detail["messages"]))
+            db.set_session_metrics(session["id"], apply_checks(metrics_from_logs(detail, detail["messages"]), None, use_history=False))
             n += 1
         except Exception as e:
             print(f"[metrics] backfill skipped session {session['id']} ({type(e).__name__}: {e})")
     if n:
         print(f"[metrics] backfilled {n} sessions from logs")
+    refresh_checks()
     return n
 
 
@@ -714,6 +811,8 @@ def stats(days: int) -> dict:
             "tokens": ((m.get("llm") or {}).get("prompt_tokens"), (m.get("llm") or {}).get("output_tokens")),
             "metrics_source": m.get("source"),
             "missing_sections": (m.get("output") or {}).get("missing_sections"),
+            "degraded": m.get("degraded"),
+            "checks": [c["detail"] for c in m.get("checks") or []],
         })
         for name, p in ((m.get("search") or {}).get("providers") or {}).items():
             agg = providers.setdefault(name, {"calls": 0, "ok": 0, "errors": 0, "hits": 0, "ms": 0})
@@ -721,7 +820,7 @@ def stats(days: int) -> dict:
                 agg[k] += p.get(k) or 0
         for d, c in m.get("source_domains") or []:
             domains[d] = domains.get(d, 0) + c
-    done = [r for r in runs if r["status"] == "done"]
+    done = [r for r in runs if r["status"] == "done" and not r["degraded"]]
     durations = sorted(r["run_ms"] for r in runs if r["run_ms"])
     return {
         "days": days,

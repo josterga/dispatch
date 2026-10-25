@@ -7,10 +7,17 @@ from datetime import datetime, timedelta, timezone
 from queue import Queue
 from typing import Optional
 
+import os
+
 import db
 import metrics
 import notify
 from pipeline import MODEL, create_pipeline
+
+# Runs due while dispatch was down: the latest one is caught up if it was due within this window,
+# the rest are recorded as missed. 0 = never catch up (only record).
+CATCH_UP_HOURS = float(os.getenv("DISPATCH_CATCH_UP_HOURS", "12"))
+_MAX_MISSED_RECORDS = 24  # per dispatch and startup, so a long outage doesn't flood the run list
 
 
 class TeeStream:
@@ -56,14 +63,21 @@ def _current_step(logs: str) -> Optional[str]:
     return None
 
 
-def _notify(client, session_id: int, title: str, result: str) -> None:
-    """Push summary + ntfy, recorded as one "notify" event of the run."""
+def _notify(client, session_id: int, title: str, result: Optional[str], verdict: Optional[dict]) -> None:
+    """Push summary + ntfy, recorded as one "notify" event of the run. Failed or empty runs send
+    only what went wrong; degraded runs lead with their self-check results."""
+    note = metrics.problem_note(verdict) if notify.ALERT_PROBLEMS else None
+    no_answer = (verdict or {}).get("status") in ("error", "empty")  # nothing worth summarizing
+    if no_answer and not note:
+        return
     t0 = time.monotonic()
-    summary = notify.summarize(client, result, session_id)
+    summary = "" if no_answer else notify.summarize(client, result, session_id)
     summary_ms = int((time.monotonic() - t0) * 1000)
-    status, err = notify.send(title=title, body=summary)
+    body = "\n\n".join(x for x in (note, summary) if x)
+    status, err = notify.send(title=("⚠ " if note else "") + title, body=body,
+                              tags=["warning"] if note else [], priority="high" if note else "default")
     metrics.get(session_id).event("notify", "notify", title, start=t0, ok=status is not None and status < 400,
-                                  error=err, summary_ms=summary_ms, http_status=status, chars=len(summary))
+                                  error=err, summary_ms=summary_ms, http_status=status, chars=len(body), alert=bool(note))
 
 
 def _run_status(answer: Optional[str], cancelled: bool) -> str:
@@ -203,7 +217,56 @@ class JobManager:
         except Exception:
             return None
 
-    def run_scheduled(self, dispatch_id: int, agent: str, prompt: str, trigger: str = "scheduled") -> None:
+    def catch_up_missed(self, dispatches: list[dict], down_since: str) -> None:
+        """On startup: find fire times that passed while dispatch was not running (APScheduler keeps
+        no history and skips them silently). Catch up the latest one once, record the others as missed.
+        down_since: the previous process's last heartbeat."""
+        from apscheduler.triggers.cron import CronTrigger
+        from apscheduler.triggers.date import DateTrigger
+        now = datetime.now(timezone.utc)
+        until = now - timedelta(seconds=90)  # anything newer is APScheduler's to run
+        lines = []
+        for d in dispatches:
+            try:
+                if d.get("trigger_type") == "once":
+                    t = datetime.fromisoformat(d["schedule"])
+                    trig = DateTrigger(run_date=t if t.tzinfo else t.replace(tzinfo=timezone.utc))
+                else:
+                    trig = CronTrigger.from_crontab(d["schedule"], timezone=d.get("timezone") or "UTC")
+                last = db.get_latest_session_for_dispatch(d["id"], include_missed=True)
+                since = datetime.fromisoformat((last or {}).get("started_at") or d["created_at"])
+                if since.tzinfo is None:
+                    since = since.replace(tzinfo=timezone.utc)
+                since = max(since, datetime.fromisoformat(down_since) - timedelta(seconds=60))
+                end = until
+                if d.get("repeat_until"):
+                    ru = datetime.fromisoformat(d["repeat_until"])
+                    end = min(end, ru if ru.tzinfo else ru.replace(tzinfo=timezone.utc))
+                fires, t = [], trig.get_next_fire_time(None, since + timedelta(seconds=1))
+                while t and t < end and len(fires) < 1000:
+                    fires.append(t)
+                    t = trig.get_next_fire_time(t, t + timedelta(seconds=1))
+                if not fires:
+                    continue
+                latest = fires[-1]
+                catch = CATCH_UP_HOURS > 0 and now - latest <= timedelta(hours=CATCH_UP_HOURS)
+                missed = fires[:-1] if catch else fires
+                for f in missed[-_MAX_MISSED_RECORDS:]:
+                    db.record_missed_run(d["id"], d["agent"], MODEL, d["prompt"], f.astimezone(timezone.utc).isoformat())
+                name = d.get("label") or d["agent"]
+                print(f"[dispatch] {name}: {len(fires)} run(s) missed while down" + (", catching up the latest" if catch else ""))
+                lines.append(f"{name}: {len(fires)} missed" + (" (caught up the latest)" if catch else ""))
+                if catch:
+                    self.run_scheduled(d["id"], d["agent"], d["prompt"], trigger="catch_up",
+                                       scheduled_for=latest.astimezone(timezone.utc).isoformat())
+            except Exception as e:
+                print(f"[dispatch] catch-up check failed for dispatch {d.get('id')}: {type(e).__name__}: {e}")
+        if lines and notify.ALERT_PROBLEMS:
+            notify.send(title="⚠ dispatch missed runs", body="Dispatch was not running when these were due:\n" + "\n".join(lines),
+                        tags=["warning"], priority="high")
+
+    def run_scheduled(self, dispatch_id: int, agent: str, prompt: str, trigger: str = "scheduled",
+                      scheduled_for: Optional[str] = None) -> None:
         """Called by APScheduler for dispatch-triggered jobs (and on create with run_on_create)."""
         with self._lock:
             for job in self._jobs.values():
@@ -214,7 +277,8 @@ class JobManager:
         agent_name = agent if agent in self.pipeline_configs else "general"
         job_id = uuid.uuid4().hex
         cancel_event = threading.Event()
-        scheduled_for = self._scheduled_for(dispatch_id) if trigger == "scheduled" else None
+        if trigger == "scheduled":
+            scheduled_for = self._scheduled_for(dispatch_id)
 
         session_id = db.start_session(MODEL, agent=agent_name, source="dispatch", dispatch_id=dispatch_id)
         db.log_message(session_id, "user", prompt)
@@ -268,9 +332,9 @@ class JobManager:
                         self.scheduler.remove_job(f"dispatch_{dispatch_id}")
                     except Exception:
                         pass
-                metrics.get(session_id).mark_ended()
-                if _status == "done" and _result:
-                    _notify(self.client, session_id, agent, _result)
+                verdict = metrics.get(session_id).evaluate(_mstatus, answer, _exc)
+                if (_status == "done" and _result) or _mstatus == "error":
+                    _notify(self.client, session_id, agent, _result, verdict)
                 metrics.finish(session_id, _mstatus, answer, _exc)
 
         self._queue.put((job_id, _run, ()))
@@ -324,8 +388,8 @@ class JobManager:
                 elif _err:
                     self._jobs[job_id]["error"] = _err
             db.end_session(session_id)
-            metrics.get(session_id).mark_ended()
+            verdict = metrics.get(session_id).evaluate(_mstatus, answer, _exc)
             if getattr(body, "dispatch_id", None):
-                if _status == "done" and _result:
-                    _notify(self.client, session_id, agent_name, _result)
+                if (_status == "done" and _result) or _mstatus == "error":
+                    _notify(self.client, session_id, agent_name, _result, verdict)
             metrics.finish(session_id, _mstatus, answer, _exc)

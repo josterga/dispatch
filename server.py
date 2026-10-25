@@ -54,6 +54,7 @@ def _register_dispatch_job(dispatch: dict) -> None:
         args=[dispatch["id"], dispatch["agent"], dispatch["prompt"]],
         id=f"dispatch_{dispatch['id']}",
         replace_existing=True,
+        misfire_grace_time=300,  # a run delayed a few minutes (busy box, clock jump) still happens
     )
 
 
@@ -70,6 +71,13 @@ async def lifespan(app: FastAPI):
             pass
     _scheduler.start()
     threading.Thread(target=metrics.backfill, daemon=True, name="metrics-backfill").start()
+    # Downtime = last heartbeat of the previous process → now; runs due in it were never fired.
+    alive_at = db.get_setting("_alive_at")
+    _scheduler.add_job(lambda: db.set_setting("_alive_at", datetime.now(timezone.utc).isoformat()),
+                       "interval", seconds=60, id="heartbeat", next_run_time=datetime.now(timezone.utc))
+    if alive_at:
+        threading.Thread(target=_jobs.catch_up_missed, args=(db.get_dispatches(enabled_only=True), alive_at),
+                         daemon=True, name="catch-up").start()
     yield
     _scheduler.shutdown(wait=False)
 

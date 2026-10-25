@@ -7,6 +7,8 @@ _NTFY_URL = os.getenv("NTFY_URL", "https://ntfy.sh").rstrip("/")
 _NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
 _NTFY_TOKEN = os.getenv("NTFY_TOKEN", "")
 _DISPATCH_URL = os.getenv("DISPATCH_URL", "")
+# Flag degraded runs (⚠ title, reasons first, high priority) and notify on failed runs. 0 = off.
+ALERT_PROBLEMS = os.getenv("NTFY_ON_PROBLEMS", "1") != "0"
 
 _SUMMARY_PROMPT = (
     "Summarize the following research result in 2-3 plain sentences suitable for a mobile push notification. "

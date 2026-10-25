@@ -271,6 +271,11 @@ class AgentPipeline:
         self.sub = sub  # sub-pipeline label inside a MultiAgentPipeline
         self.rec = metrics.get(session_id)
         self._round = 0  # 0 = planner queries, N = validator retry round N
+        # Work done in earlier rounds; a validator retry only handles what is new.
+        self._seen_results: set[str] = set()   # search result URLs already in the buffer
+        self._checked_urls: set[str] = set()   # URLs already HEAD-checked
+        self._fetched_urls: set[str] = set()   # URLs already fetched by the fetcher
+        self._summarized_urls: set[str] = set()
 
     def _micro(self, phase: str, system_prompt: str, user_content: str, **kw) -> Optional[str]:
         return run_micro_agent(
@@ -478,20 +483,21 @@ class AgentPipeline:
                                        truncated=len(content) > 10000, round=self._round,
                                        inbox={k: v for k, v in ib.items() if k != "item_urls"} if ib else None, **meta)
                     else:
+                        new = sum(1 for r in result.get("results") or [] if r.get("url") and r.get("url") not in self._seen_results)
                         self.rec.event("search", "searcher", q, sub=self.sub, start=t0, ok="results" in result,
-                                       error=result.get("error"), round=self._round, **meta)
+                                       error=result.get("error"), round=self._round, new_results=new, **meta)
                     if result and not result.get("error"):
                         if result.get("source_errors"):
                             all_source_errors[q] = result["source_errors"]
                         if "results" in result:
-                            trimmed = [
-                                {
-                                    "title": r.get("title", ""),
-                                    "url": r.get("url", ""),
-                                    "content": r.get("content", "")[:1500],
-                                }
-                                for r in (result.get("results") or [])
-                            ]
+                            # A URL already in the buffer (earlier query or round) adds nothing new.
+                            trimmed = []
+                            for r in result.get("results") or []:
+                                url = r.get("url", "")
+                                if url in self._seen_results:
+                                    continue
+                                self._seen_results.add(url)
+                                trimmed.append({"title": r.get("title", ""), "url": url, "content": r.get("content", "")[:1500]})
                         else:
                             if result.get("content"):
                                 direct_pages[q] = result["content"][:10000]
@@ -519,11 +525,12 @@ class AgentPipeline:
                 for item in entry.get("content", []):
                     for r in item.get("results", []):
                         url = r.get("url", "")
-                        if url:
+                        if url and url not in self._checked_urls:
                             all_urls.add(url)
 
         if not all_urls:
             return
+        self._checked_urls |= all_urls
 
         print(f"[pipeline] link-validator: checking {len(all_urls)} URLs in parallel")
         TIMEOUT = 3
@@ -577,9 +584,9 @@ class AgentPipeline:
 
     def _run_fetcher(self, goal: str) -> None:
         """Rank URLs with one Ollama call, then fetch the top picks in parallel."""
-        url_list = self._extract_titles_and_urls()
+        url_list = self._extract_titles_and_urls(exclude=self._fetched_urls)
         if not url_list:
-            print("[pipeline] fetcher: no URLs to fetch")
+            print("[pipeline] fetcher: no new URLs to fetch")
             return
 
         print(f"[pipeline] ranker: selecting from {len(url_list)} candidate URLs")
@@ -589,7 +596,7 @@ class AgentPipeline:
         ranked_urls = parsed if parsed is not None else []
         if isinstance(ranked_urls, dict):
             ranked_urls = list(ranked_urls.values())
-        ranked_urls = list(dict.fromkeys(u for u in ranked_urls if isinstance(u, str)))[:5]
+        ranked_urls = list(dict.fromkeys(u for u in ranked_urls if isinstance(u, str) and u not in self._fetched_urls))[:5]
         self.rec.event("decision", "ranker", "ranker", sub=self.sub, round=self._round, candidates=len(url_list),
                        parsed_ok=parsed is not None, model_failed=rank_out is None, selected=ranked_urls,
                        selected_known=sum(1 for u in ranked_urls if any(c["url"] == u for c in url_list)))
@@ -602,6 +609,7 @@ class AgentPipeline:
             return
 
         print(f"[pipeline] fetcher: fetching {len(ranked_urls)} URLs in parallel")
+        self._fetched_urls.update(ranked_urls)
 
         def _fetch(url: str) -> tuple[str, dict, float]:
             t0 = time.monotonic()
@@ -649,9 +657,11 @@ class AgentPipeline:
             p
             for e in self.research_buffer if e.get("phase") == "fetch"
             for p in e.get("content", [])
+            if p.get("url") not in self._summarized_urls
         ]
         if not pages:
             return
+        self._summarized_urls.update(p.get("url") for p in pages)
 
         print(f"[pipeline] page-summarizer: summarizing {len(pages)} pages in parallel")
 
@@ -678,10 +688,10 @@ class AgentPipeline:
         if summaries:
             self.research_buffer.append({"phase": "summaries", "content": summaries})
 
-    def _extract_titles_and_urls(self) -> list[dict]:
-        """Pull {title, url} pairs from structured search results in the buffer."""
+    def _extract_titles_and_urls(self, exclude: frozenset = frozenset()) -> list[dict]:
+        """Pull {title, url} pairs from structured search results in the buffer (minus `exclude`)."""
         pairs = []
-        seen: set[str] = set()
+        seen: set[str] = set(exclude)
         for entry in self.research_buffer:
             if entry.get("phase") != "search":
                 continue

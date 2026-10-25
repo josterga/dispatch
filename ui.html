@@ -1062,6 +1062,7 @@ function humanizeCron(expr, tz) {
   const parts = expr.trim().split(/\s+/);
   if (parts.length !== 5) return expr;
   const [m, h, dom, mon, dow] = parts;
+  if (!/^\d+$/.test(m) || !/^\d+$/.test(h)) return expr;  // hourly / stepped schedules: show the cron
   const time = formatTime12(h, m) + (tz && tz !== BROWSER_TZ ? ` (${tz})` : '');
   const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   if (dom === '*' && mon === '*' && dow === '*') return `Daily at ${time}`;
@@ -1274,7 +1275,7 @@ function renderSidebarList() {
     return `<button class="sb-item${isActive ? ' active' : ''}${!s.viewed ? ' unread' : ''}" onclick="openRunDrawer(${s.id})">
       <div class="sb-item-row">${pillHTML(s.agent)} ${runBadge} ${jobForSession(s.id) ? '' : `<span class="meta-mono" style="margin-left:auto;font-size:10.5px">${esc(fmtTime(s.started_at))}</span>`}</div>
       <div class="sb-item-prompt">${esc(s.prompt || '—')}</div>
-      ${!jobForSession(s.id) && s.run_status ? `<div style="margin-top:5px">${metricsChipHTML(s.run_status, s.run_sources, s.run_ms, { backfill: s.metrics_source === 'backfill' })}</div>` : ''}
+      ${!jobForSession(s.id) && s.run_status ? `<div style="margin-top:5px">${metricsChipHTML(s.run_status, s.run_sources, s.run_ms, { backfill: s.metrics_source === 'backfill', degraded: !!s.run_degraded, checks: s.run_checks })}</div>` : ''}
     </button>`;
   }).join('');
 }
@@ -1517,7 +1518,7 @@ function renderMobileRuns() {
         <span class="meta-mono" style="margin-left:auto;font-size:10.5px">${esc(fmtTime(s.started_at))}</span>
       </div>
       <div style="margin-top:6px;font-size:13.5px;color:var(--fg);line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.prompt || '—')}</div>
-      ${!jobForSession(s.id) && s.run_status ? `<div style="margin-top:6px">${metricsChipHTML(s.run_status, s.run_sources, s.run_ms, { backfill: s.metrics_source === 'backfill' })}</div>` : ''}
+      ${!jobForSession(s.id) && s.run_status ? `<div style="margin-top:6px">${metricsChipHTML(s.run_status, s.run_sources, s.run_ms, { backfill: s.metrics_source === 'backfill', degraded: !!s.run_degraded, checks: s.run_checks })}</div>` : ''}
     </button>`).join('');
   el.innerHTML = `<div style="padding:10px 14px 24px;display:flex;flex-direction:column;gap:6px">${cards}</div>`;
 }
@@ -1565,7 +1566,7 @@ function renderRunDrawer(s) {
     ${pillHTML(agent)}
     <span class="meta-mono" style="font-size:11px">${esc(fmtTime(s.started_at))}</span>
     ${m && !isRunning
-      ? `<span style="margin-left:auto">${metricsChipHTML(m.status, m.sources, totalDuration, { onclick: 'toggleStats()', open: statsOpen, backfill: m.source === 'backfill' })}</span>`
+      ? `<span style="margin-left:auto">${metricsChipHTML(m.status, m.sources, totalDuration, { onclick: 'toggleStats()', open: statsOpen, backfill: m.source === 'backfill', degraded: m.degraded, checks: m.checks })}</span>`
       : (totalDuration > 0 ? `<span class="meta-mono" style="margin-left:auto;font-size:11px">${fmtDuration(totalDuration)}</span>` : '<span style="margin-left:auto"></span>')}
     ${stopBtn}
     <button class="btn btn-ghost btn-sm" onclick="closeRunDrawer()">
@@ -1750,21 +1751,31 @@ function phaseGroups(phases) {
 
 const STATUS_SERIES = [
   { key: 'good', label: 'Done', color: 'var(--st-good)' },
-  { key: 'warn', label: 'Empty / 0 sources', color: 'var(--st-warn)' },
+  { key: 'warn', label: 'Degraded / missed', color: 'var(--st-warn)' },
   { key: 'crit', label: 'Error', color: 'var(--st-crit)' },
   { key: 'none', label: 'Cancelled', color: 'var(--st-none)' },
 ];
 const TONE_RANK = { none: 0, good: 1, warn: 2, crit: 3 };
 
-function runTone(status, sources) {
+// degraded = a self-check failed (see metrics.run_checks); missed = due while dispatch was down.
+function runTone(status, sources, degraded) {
   if (status === 'error') return 'crit';
-  if (status === 'empty' || (status === 'done' && sources === 0)) return 'warn';
+  if (degraded || status === 'empty' || status === 'missed' || (status === 'done' && sources === 0)) return 'warn';
   if (status === 'done') return 'good';
   return 'none';
 }
-function statusText(status, sources) {
+function statusText(status, sources, degraded) {
+  if (status === 'done' && degraded) return 'degraded';
   if (status === 'done' && sources === 0) return 'done, 0 sources';
   return status || 'no metrics yet';
+}
+// Stats rows ({status, sources, degraded, checks}) → tone / label.
+function rTone(r) { return runTone(r.status, r.sources, r.degraded); }
+function rText(r) { return statusText(r.status, r.sources, r.degraded); }
+// Check details from metrics (array of {rule, detail}), a JSON string of that (session lists), or strings (stats).
+function checkDetails(checks) {
+  if (typeof checks === 'string') { try { checks = JSON.parse(checks); } catch { return []; } }
+  return (checks || []).map(c => typeof c === 'string' ? c : c.detail);
 }
 function fmtCompact(n) {
   if (n == null || isNaN(n)) return '—';
@@ -1786,13 +1797,15 @@ function shortUrl(url) { try { const u = new URL(url); return u.hostname.replace
 
 function metricsChipHTML(status, sources, runMs, opts = {}) {
   if (!status) return '';
-  const tone = runTone(status, sources);
+  const tone = runTone(status, sources, opts.degraded);
   const parts = [];
-  if (sources != null) parts.push(`${sources} source${sources === 1 ? '' : 's'}`);
+  if (status === 'missed' || status === 'error') parts.push(status);
+  else if (sources != null) parts.push(`${sources} source${sources === 1 ? '' : 's'}`);
   else if (status !== 'done') parts.push(status);
   if (runMs > 0) parts.push(fmtDuration(runMs));
-  const label = parts.join(' · ') || status;
-  const tip = statusText(status, sources) + (opts.backfill ? ' (reconstructed from logs)' : '');
+  const label = (opts.degraded && status === 'done' ? '⚠ ' : '') + (parts.join(' · ') || status);
+  const details = checkDetails(opts.checks);
+  const tip = statusText(status, sources, opts.degraded) + (details.length ? ': ' + details.join('; ') : '') + (opts.backfill ? ' (reconstructed from logs)' : '');
   if (opts.onclick) {
     return `<button class="mchip t-${tone}${opts.open ? ' open' : ''}" onclick="${opts.onclick}" title="${esc(tip)} · click for stats" aria-expanded="${!!opts.open}"><span class="st-ic"></span>${esc(label)} ${opts.open ? '▴' : '▾'}</button>`;
   }
@@ -1933,8 +1946,13 @@ function renderStatsPanel(s, events) {
   const out = m.output || {};
   const synth = m.synth || {};
   const err = run.error;
+  const checks = m.checks || [];
+  if (checks.length) {
+    html += sec('Checks', `<ul style="margin:0 0 0 16px;font-size:12px;color:var(--fg);line-height:1.6">${checks.map(c => `<li><span class="meta-mono">${esc(c.rule.replace(/_/g, ' '))}</span> · ${esc(c.detail)}</li>`).join('')}</ul>`,
+      m.median_ms ? `median for this dispatch ${fmtMs(m.median_ms)}` : '');
+  }
   html += sec('Run', `<div class="tiles">
-    ${tileHTML('Status', statusText(m.status, m.sources), err ? `${err.type} in ${err.phase || '?'}` : (run.trigger || ''), err ? `${err.type}\n${err.message}` : '')}
+    ${tileHTML('Status', statusText(m.status, m.sources, m.degraded), err ? `${err.type} in ${err.phase || '?'}` : (run.trigger || ''), err ? `${err.type}\n${err.message}` : '')}
     ${tileHTML('Sources', m.sources == null ? '—' : String(m.sources), srcSub, 'Distinct sources that reached the synthesizer (inbox items count individually)')}
     ${tileHTML('Duration', fmtMs(t.run_ms), durSub)}
     ${tileHTML('Tokens in / out', `${fmtCompact(llm.prompt_tokens)} / ${fmtCompact(llm.output_tokens)}`, llm.calls ? `${llm.calls} calls${llm.reloads ? ` · ${llm.reloads} reloads` : ''}${llm.truncated ? ` · ${llm.truncated} cut off` : ''}` : '')}
@@ -2204,7 +2222,7 @@ async function renderDashboard() {
   const k = st.kpi;
   const active = allDispatches.filter(c => c.enabled);
   const soonest = active.map(c => ({ c, t: nextRun(c.schedule, null, c.timezone) })).filter(x => x.t).sort((a, b) => a.t - b.t)[0];
-  const needLook = runs.filter(r => runTone(r.status, r.sources) !== 'good').length;
+  const needLook = runs.filter(r => rTone(r) !== 'good').length;
   const range = `<div class="dash-bar">
     <div style="display:inline-grid;grid-template-columns:1fr 1fr;background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:3px;gap:2px">
       <button class="seg-btn${dashDays === 7 ? ' active' : ''}" onclick="setDashDays(7)">7 days</button>
@@ -2233,13 +2251,13 @@ async function renderDashboard() {
     const cells = days.map(d => {
       const dayRuns = row.runs.filter(r => localDayKey(new Date(r.started_at)) === d.key);
       if (!dayRuns.length) return `<td class="c"></td>`;
-      const tipOf = r => `${fmtTime(r.started_at)} · ${statusText(r.status, r.sources)}${r.sources != null ? `\n${r.sources} sources` : ''}${r.run_ms ? `\n${fmtDuration(r.run_ms)}` : ''}${r.missing_sections?.length ? `\nmissing: ${r.missing_sections.join(', ')}` : ''}`;
+      const tipOf = r => `${fmtTime(r.started_at)} · ${rText(r)}${r.sources != null ? `\n${r.sources} sources` : ''}${r.run_ms ? `\n${fmtDuration(r.run_ms)}` : ''}${(r.checks || []).length ? '\n' + r.checks.join('\n') : ''}`;
       if (dashDays > 7) {
-        const worst = dayRuns.reduce((a, r) => TONE_RANK[runTone(r.status, r.sources)] > TONE_RANK[a] ? runTone(r.status, r.sources) : a, 'none');
+        const worst = dayRuns.reduce((a, r) => TONE_RANK[rTone(r)] > TONE_RANK[a] ? rTone(r) : a, 'none');
         const last = dayRuns[dayRuns.length - 1];
-        return `<td class="c"><button class="dot t-${worst}" data-tip="${esc(`${row.name} · ${d.date.toLocaleDateString()}\n${dayRuns.length} run${dayRuns.length > 1 ? 's' : ''}\n` + dayRuns.map(r => statusText(r.status, r.sources)).join(', '))}" aria-label="${dayRuns.length} runs" onclick="openRunDrawer(${last.id})"></button></td>`;
+        return `<td class="c"><button class="dot t-${worst}" data-tip="${esc(`${row.name} · ${d.date.toLocaleDateString()}\n${dayRuns.length} run${dayRuns.length > 1 ? 's' : ''}\n` + dayRuns.map(rText).join(', '))}" aria-label="${dayRuns.length} runs" onclick="openRunDrawer(${last.id})"></button></td>`;
       }
-      return `<td class="c">${dayRuns.map(r => `<button class="dot t-${runTone(r.status, r.sources)}" data-tip="${esc(row.name + '\n' + tipOf(r))}" aria-label="${esc(statusText(r.status, r.sources))}" onclick="openRunDrawer(${r.id})"></button>`).join('')}</td>`;
+      return `<td class="c">${dayRuns.map(r => `<button class="dot t-${rTone(r)}" data-tip="${esc(row.name + '\n' + tipOf(r))}" aria-label="${esc(rText(r))}" onclick="openRunDrawer(${r.id})"></button>`).join('')}</td>`;
     }).join('');
     return `<tr><td class="rl" title="${esc(row.name)}">${esc(row.name)}</td>${cells}</tr>`;
   }).join('');
@@ -2272,7 +2290,7 @@ function drawDashCharts() {
   if (daily) {
     const cols = days.map(d => {
       const v = { good: 0, warn: 0, crit: 0, none: 0 };
-      runs.filter(r => localDayKey(new Date(r.started_at)) === d.key).forEach(r => { v[runTone(r.status, r.sources)]++; });
+      runs.filter(r => localDayKey(new Date(r.started_at)) === d.key).forEach(r => { v[rTone(r)]++; });
       const total = v.good + v.warn + v.crit + v.none;
       return {
         label: dashDays === 7 ? d.date.toLocaleDateString('en-US', { weekday: 'short' }) : String(d.date.getDate()),
@@ -2312,11 +2330,11 @@ let activeSort = { key: 'next', dir: 1 };
 let activeQuery = '';
 function dispatchRunStats(id, runs) {
   const mine = runs.filter(r => r.dispatch_id === id && r.status);
-  const done = mine.filter(r => r.status === 'done').length;
+  const done = mine.filter(r => r.status === 'done' && !r.degraded).length;
   const durs = mine.map(r => r.run_ms).filter(Boolean);
   const days = lastDays(7).map(d => {
     const dr = mine.filter(r => localDayKey(new Date(r.started_at)) === d.key);
-    const tone = dr.reduce((a, r) => TONE_RANK[runTone(r.status, r.sources)] > TONE_RANK[a] ? runTone(r.status, r.sources) : a, 'none');
+    const tone = dr.reduce((a, r) => TONE_RANK[rTone(r)] > TONE_RANK[a] ? rTone(r) : a, 'none');
     return { d, n: dr.length, tone: dr.length ? tone : null };
   });
   return {
@@ -2409,7 +2427,7 @@ function renderActiveRows() {
     const schedCell = kind === 'active' ? nextRunCellHTML(c.schedule, c.timezone) : `<span class="meta-mono">${esc(humanizeCron(c.schedule, c.timezone))}</span>`;
     const lastCell = c.last_session_id
       ? `<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-start">
-           ${c.last_status ? metricsChipHTML(c.last_status, c.last_sources, c.last_run_ms, { onclick: `event.stopPropagation();openRunDrawer(${c.last_session_id})` }).replace(/ [▾▴]<\/button>$/, '</button>') : `<button class="mchip t-none" onclick="event.stopPropagation();openRunDrawer(${c.last_session_id})">open</button>`}
+           ${c.last_status ? metricsChipHTML(c.last_status, c.last_sources, c.last_run_ms, { onclick: `event.stopPropagation();openRunDrawer(${c.last_session_id})`, degraded: !!c.last_degraded, checks: c.last_checks }).replace(/ [▾▴]<\/button>$/, '</button>') : `<button class="mchip t-none" onclick="event.stopPropagation();openRunDrawer(${c.last_session_id})">open</button>`}
            <span class="meta-mono" style="font-size:10.5px">${esc(fmtRelTime(c.last_started_at))}</span></div>`
       : '<span class="meta">—</span>';
     return `<tr onclick="openAgentSheet(${c.id})">

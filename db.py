@@ -315,10 +315,12 @@ def get_sessions(limit: int = 50, agent: Optional[str] = None) -> list[dict]:
             json_extract(s.metrics, '$.status')        AS run_status,
             json_extract(s.metrics, '$.sources')       AS run_sources,
             json_extract(s.metrics, '$.timing.run_ms') AS run_ms,
-            json_extract(s.metrics, '$.source')        AS metrics_source
+            json_extract(s.metrics, '$.source')        AS metrics_source,
+            json_extract(s.metrics, '$.degraded')      AS run_degraded,
+            json_extract(s.metrics, '$.checks')        AS run_checks
         FROM sessions s
         {where}
-        ORDER BY s.id DESC
+        ORDER BY s.started_at DESC, s.id DESC
         LIMIT ?
         """,
         params,
@@ -399,6 +401,46 @@ def sessions_without_metrics() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def record_missed_run(dispatch_id: int, agent: str, model: str, prompt: str, scheduled_for: str) -> int:
+    """A run that was due while dispatch was down, kept so the run list and dashboard show the gap."""
+    metrics = {
+        "v": 2, "source": "live", "status": "missed",
+        "run": {"trigger": "scheduled", "dispatch_id": dispatch_id, "scheduled_for": scheduled_for},
+        "checks": [{"rule": "missed", "detail": "dispatch was not running when this run was due"}],
+        "degraded": True,
+    }
+    conn = _get_conn()
+    cur = conn.execute(
+        "INSERT INTO sessions (model, agent, source, started_at, ended_at, viewed_at, dispatch_id, metrics) VALUES (?, ?, 'dispatch', ?, ?, ?, ?, ?)",
+        (model, agent, scheduled_for, scheduled_for, _now(), dispatch_id, json.dumps(metrics)),
+    )
+    conn.execute("INSERT INTO messages (session_id, role, content, created_at) VALUES (?, 'user', ?, ?)", (cur.lastrowid, prompt, _now()))
+    conn.commit()
+    return cur.lastrowid
+
+
+def recent_run_ms(dispatch_id: int, limit: int = 20, exclude_session: Optional[int] = None) -> list[int]:
+    """Durations of the dispatch's latest clean runs (the baseline for the "slow" self-check)."""
+    conn = _get_conn()
+    rows = conn.execute(
+        """SELECT json_extract(metrics, '$.timing.run_ms') AS ms FROM sessions
+           WHERE dispatch_id = ? AND id != ? AND json_extract(metrics, '$.status') = 'done'
+             AND json_extract(metrics, '$.timing.run_ms') IS NOT NULL
+             AND COALESCE(json_extract(metrics, '$.degraded'), 0) = 0
+           ORDER BY id DESC LIMIT ?""",
+        (dispatch_id, exclude_session or -1, limit),
+    ).fetchall()
+    return [r["ms"] for r in rows]
+
+
+def sessions_needing_checks() -> list[dict]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT id, metrics FROM sessions WHERE metrics IS NOT NULL AND json_extract(metrics, '$.checks') IS NULL ORDER BY id"
+    ).fetchall()
+    return [{"id": r["id"], "metrics": json.loads(r["metrics"])} for r in rows]
+
+
 def sessions_with_metrics(since: str) -> list[dict]:
     conn = _get_conn()
     rows = conn.execute(
@@ -429,10 +471,11 @@ def get_session_detail(session_id: int) -> Optional[dict]:
     }
 
 
-def get_latest_session_for_dispatch(dispatch_id: int) -> Optional[dict]:
+def get_latest_session_for_dispatch(dispatch_id: int, include_missed: bool = False) -> Optional[dict]:
     conn = _get_conn()
+    missed = "" if include_missed else "AND COALESCE(json_extract(metrics, '$.status'), '') != 'missed'"
     row = conn.execute(
-        "SELECT id, agent, started_at, ended_at FROM sessions WHERE dispatch_id = ? ORDER BY id DESC LIMIT 1",
+        f"SELECT id, agent, started_at, ended_at FROM sessions WHERE dispatch_id = ? {missed} ORDER BY started_at DESC, id DESC LIMIT 1",
         (dispatch_id,),
     ).fetchone()
     if not row:
@@ -503,9 +546,11 @@ def get_dispatches(enabled_only: bool = False) -> list[dict]:
             ls.id AS last_session_id, ls.started_at AS last_started_at,
             json_extract(ls.metrics, '$.status')        AS last_status,
             json_extract(ls.metrics, '$.sources')       AS last_sources,
-            json_extract(ls.metrics, '$.timing.run_ms') AS last_run_ms
+            json_extract(ls.metrics, '$.timing.run_ms') AS last_run_ms,
+            json_extract(ls.metrics, '$.degraded')      AS last_degraded,
+            json_extract(ls.metrics, '$.checks')        AS last_checks
         FROM dispatches d
-        LEFT JOIN sessions ls ON ls.id = (SELECT MAX(id) FROM sessions WHERE dispatch_id = d.id AND ended_at IS NOT NULL)
+        LEFT JOIN sessions ls ON ls.id = (SELECT id FROM sessions WHERE dispatch_id = d.id AND ended_at IS NOT NULL ORDER BY started_at DESC, id DESC LIMIT 1)
         {where}
         ORDER BY d.id DESC
     """).fetchall()
