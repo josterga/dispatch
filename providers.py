@@ -87,9 +87,10 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         num_ctx: Optional[int] = None,   # Ollama only — ignored for cloud providers
         keep_alive: Optional[Union[int, str]] = KEEP_ALIVE,  # Ollama only — ignored for cloud providers
+        think: Optional[bool] = None,    # Ollama only — None = model default, False = no reasoning phase
     ) -> NormalizedResponse:
         if self._provider == "ollama":
-            return self._chat_ollama(model, messages, tools, temperature, max_tokens, num_ctx, keep_alive)
+            return self._chat_ollama(model, messages, tools, temperature, max_tokens, num_ctx, keep_alive, think)
         elif self._provider in ("openai", "fireworks"):
             return self._chat_openai(model, messages, tools, temperature, max_tokens)
         elif self._provider == "anthropic":
@@ -97,7 +98,7 @@ class LLMClient:
 
     # ── Ollama ────────────────────────────────────────────────────────────────
 
-    def _chat_ollama(self, model, messages, tools, temperature, max_tokens, num_ctx, keep_alive) -> NormalizedResponse:
+    def _chat_ollama(self, model, messages, tools, temperature, max_tokens, num_ctx, keep_alive, think=None) -> NormalizedResponse:
         options: dict = {"temperature": temperature}
         if num_ctx is not None:
             options["num_ctx"] = num_ctx
@@ -110,6 +111,7 @@ class LLMClient:
             stream=False,
             options=options,
             keep_alive=keep_alive,
+            think=think,
         )
         raw = resp.message
         tool_calls = None

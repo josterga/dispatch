@@ -40,6 +40,7 @@ TEMPERATURE             = float(os.getenv("TEMPERATURE", "0.2"))
 OLLAMA_TIMEOUT          = int(os.getenv("TIMEOUT", "300"))
 _SYNTHESIZER_CTX        = int(os.getenv("SYNTHESIZER_CTX", "0")) or None
 _SYNTHESIZER_MAX_CHARS  = int(os.getenv("SYNTHESIZER_MAX_CHARS", "80000"))
+_SYNTHESIZER_MAX_TOKENS = int(os.getenv("SYNTHESIZER_MAX_TOKENS", "0")) or None  # output cap; 0 = unlimited
 _PARALLEL_SUB_PIPELINES = int(os.getenv("PARALLEL_SUB_PIPELINES", "1"))  # 0 = sequential, N = max workers
 
 TOOL_RESULT_MAX_CHARS: Optional[int]     = _budget["TOOL_RESULT_MAX_CHARS"]
@@ -83,12 +84,8 @@ def run_agent(
         full_system = preamble.strip()
     if not messages or messages[0].get("role") != "system":
         messages.insert(0, {"role": "system", "content": full_system})
-    if not think and PROVIDER == "ollama":
-        messages = list(messages)
-        for i, m in enumerate(messages):
-            if isinstance(m, dict) and m.get("role") == "user":
-                messages[i] = {**m, "content": "/no_think\n" + m["content"]}
-                break
+    # Native Ollama `think` (a "/no_think" prompt prefix only works for Qwen3; gemma4 ignores it).
+    think_opt = None if think else False
     for _ in range(max_iterations):
         if cancel_event and cancel_event.is_set():
             return None
@@ -100,6 +97,7 @@ def run_agent(
                 temperature=TEMPERATURE,
                 max_tokens=num_predict,
                 num_ctx=num_ctx or NUM_CTX,
+                think=think_opt,
             )
         except Exception as e:
             print(f"[agent] ERROR: model call failed ({type(e).__name__}): {e}")
@@ -151,6 +149,7 @@ def run_agent(
             tools=[],
             temperature=TEMPERATURE,
             num_ctx=num_ctx or NUM_CTX,
+            think=think_opt,
         )
         final = resp.message.content
         if final:
@@ -365,6 +364,7 @@ class AgentPipeline:
             max_iterations=1,
             cancel_event=self.cancel_event,
             num_ctx=_SYNTHESIZER_CTX,
+            num_predict=_SYNTHESIZER_MAX_TOKENS,
         )
         print(f"[pipeline] synthesizer: {int((time.monotonic()-_t0)*1000)}ms")
         if not result:

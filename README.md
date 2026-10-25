@@ -272,6 +272,7 @@ Open the gear icon in the web UI to change these at any time. A server restart i
 | `DISPATCH_AGENTS_DIR` | `./agents` | YAML seed files directory |
 | `PLANNER_QUERY_COUNT` | `5` | Global default for `planner_query_count` (overridden per-agent) |
 | `PARALLEL_SUB_PIPELINES` | `1` | Max parallel workers for multi-track pipelines; `0` = sequential |
+| `SYNTHESIZER_MAX_TOKENS` | `0` | Cap on the synthesizer's output tokens; `0` = unlimited. Guards against runaway generation hitting `TIMEOUT` |
 
 ## Web UI
 
