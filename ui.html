@@ -249,6 +249,50 @@ body.theme-light .seg-btn.active { background: white; box-shadow: 0 1px 3px oklc
 .config-dd .new-dropdown-menu { min-width: 180px; }
 .config-dd .new-dropdown-item .tc { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--fg-4); }
 .config-dd .new-dropdown-item:last-child { border-top: 1px solid var(--line-2); }
+/* Ask (digest chat) */
+.ask { display: grid; grid-template-columns: 280px minmax(0, 1fr); height: 100%; min-height: 0; }
+.ask-list { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.ask-list-hdr { display: flex; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.ask-filter { padding: 8px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 6px; }
+.ask-items { overflow-y: auto; flex: 1; }
+.ask-item { display: block; width: 100%; text-align: left; padding: 10px 14px; border: none; border-bottom: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer; }
+.ask-item:hover { background: var(--hover); }
+.ask-item.active { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--accent); }
+.ask-item-title { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ask-item-meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 10.5px; color: var(--fg-3); }
+.ask-empty { padding: 24px 14px; font-size: 12.5px; color: var(--fg-3); }
+.ask-thread { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.ask-thread-hdr { display: flex; align-items: center; gap: 8px; padding: 10px 20px; border-bottom: 1px solid var(--line); min-height: 49px; }
+.ask-thread-hdr .tag-chip { white-space: nowrap; flex-shrink: 0; }
+.ask-thread-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ask-thread-hdr .ask-back { display: none; }
+.chip-x { border: none; background: none; color: inherit; cursor: pointer; padding: 0 0 0 2px; font: inherit; }
+.ask-msgs { flex: 1; overflow-y: auto; padding: 16px 20px; min-height: 0; }
+.ask-intro { max-width: 640px; color: var(--fg-2); font-size: 13.5px; line-height: 1.55; }
+.ask-intro p { margin: 0 0 10px; }
+.ask-suggest { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.ask-turn { max-width: 760px; margin-bottom: 22px; }
+.ask-q { display: inline-block; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; font-size: 13.5px; white-space: pre-wrap; margin-bottom: 8px; max-width: 100%; overflow-wrap: anywhere; }
+.ask-steps { font-size: 11.5px; color: var(--fg-3); margin: 0 0 8px; }
+.ask-steps summary { cursor: pointer; font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ask-steps ol { margin: 6px 0 0; padding-left: 20px; }
+.ask-a { font-size: 14px; line-height: 1.6; color: var(--fg-2); overflow-wrap: anywhere; }
+.ask-err { font-size: 13px; color: var(--danger); }
+.ask-pending { font-size: 13px; color: var(--fg-3); display: flex; align-items: center; gap: 8px; }
+.ask-composer { border-top: 1px solid var(--line); padding: 10px 20px 12px; }
+.ask-composer textarea { width: 100%; resize: vertical; min-height: 44px; max-height: 200px; font-size: 13.5px; }
+.ask-composer-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.ask-research { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--fg-2); cursor: pointer; }
+@media (max-width: 640px) {
+  .ask { grid-template-columns: minmax(0, 1fr); }
+  .ask[data-view="list"] .ask-thread, .ask[data-view="thread"] .ask-list { display: none; }
+  .ask-list { border-right: none; }
+  .ask-thread-hdr .ask-back { display: inline-flex; }
+  .ask-thread-hdr { padding: 8px 12px; }
+  .ask-msgs { padding: 12px 14px; }
+  .ask-composer { padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px)); }
+  .ask-composer textarea { font-size: 16px; }  /* under 16px, iOS Safari zooms in on focus */
+}
 .sb-filter { padding: 8px 14px 10px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
 .sb-filter select, .mob-filter select { width: 100%; padding: 5px 9px; font-size: 12.5px; }
 .mob-filter { margin-bottom: 8px; }
@@ -811,6 +855,7 @@ button.tag-chip.active { color: var(--fg); border-color: var(--accent); backgrou
       <div class="tabs">
         <button class="tab active" id="tab-digest" onclick="setTab('digest')">Digest<span class="tc" id="tc-digest"></span></button>
         <button class="tab" id="tab-dashboard" onclick="setTab('dashboard')">Dashboard</button>
+        <button class="tab" id="tab-ask" onclick="setTab('ask')">Ask</button>
         <div class="new-dropdown config-dd" id="config-dd">
           <button class="tab" id="tab-config" onclick="toggleNewMenu('config-dd',event)" aria-haspopup="menu">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="9" cy="6" r="2" fill="var(--bg)"/><circle cx="15" cy="12" r="2" fill="var(--bg)"/><circle cx="8" cy="18" r="2" fill="var(--bg)"/></svg><span id="tab-config-lbl">Config</span>
@@ -837,6 +882,10 @@ button.tag-chip.active { color: var(--fg); border-color: var(--accent); backgrou
       <button class="mob-tab-btn" id="mtab-dashboard" onclick="setMobileTab('dashboard')">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="20" x2="5" y2="12"/><line x1="12" y1="20" x2="12" y2="5"/><line x1="19" y1="20" x2="19" y2="15"/></svg>
         <span>Dashboard</span>
+      </button>
+      <button class="mob-tab-btn" id="mtab-ask" onclick="setMobileTab('ask')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>
+        <span>Ask</span>
       </button>
       <button class="mob-tab-btn" id="mtab-runs" onclick="setMobileTab('runs')">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 13 16 15"/></svg>
@@ -1354,10 +1403,10 @@ function updateTopbar() {
   document.getElementById('tc-agents').textContent = allAgents.length || '';
 }
 
-const TAB_TITLES = { digest: 'Digest', dashboard: 'Dashboard', dispatches: 'Dispatches', agents: 'Agents' };
+const TAB_TITLES = { digest: 'Digest', dashboard: 'Dashboard', ask: 'Ask', dispatches: 'Dispatches', agents: 'Agents' };
 function setTab(tab) {
   dispatchTab = tab;
-  ['digest','dashboard'].forEach(t => {
+  ['digest','dashboard','ask'].forEach(t => {
     document.getElementById('tab-' + t).classList.toggle('active', t === tab);
   });
   const inConfig = tab === 'dispatches' || tab === 'agents';
@@ -1377,10 +1426,10 @@ function setDispatchesView(v) {
 // ── Mobile tab ──
 function setMobileTab(tab) {
   mobileTab = tab;
-  ['digest','dashboard','runs','config'].forEach(t => {
+  ['digest','dashboard','ask','runs','config'].forEach(t => {
     document.getElementById('mtab-' + t).classList.toggle('active', t === tab);
   });
-  const titles = { digest: 'Digest', dashboard: 'Dashboard', runs: 'Runs', config: 'Config' };
+  const titles = { digest: 'Digest', dashboard: 'Dashboard', ask: 'Ask', runs: 'Runs', config: 'Config' };
   document.getElementById('mob-title').childNodes[0].textContent = titles[tab];
   const counts = {
     digest: digestItems.length,
@@ -1402,6 +1451,7 @@ function renderContent() {
   if (dispatchTab === 'digest') renderDigest();
   else if (dispatchTab === 'dispatches') renderDispatchesTable(allDispatches.filter(c => dispatchesView === 'active' ? c.enabled : !c.enabled), dispatchesView);
   else if (dispatchTab === 'dashboard') renderDashboard();
+  else if (dispatchTab === 'ask') renderAsk();
   else renderAgentLibrary();
 }
 
@@ -1409,6 +1459,7 @@ function renderMobileContent() {
   if (mobileTab === 'digest') renderDigest();
   else if (mobileTab === 'config') renderMobileConfig();
   else if (mobileTab === 'dashboard') renderDashboard();
+  else if (mobileTab === 'ask') renderAsk();
   else renderMobileRuns();
 }
 
@@ -1464,6 +1515,8 @@ function renderDigest() {
         <h2 class="digest-card-title">${esc(label)}</h2>
         <span class="meta-mono">${runs}</span>
         ${when ? `<span class="meta-mono">·</span><span class="meta-mono">${esc(when)}</span>` : ''}
+        ${chatCounts[c.id] ? `<button class="btn btn-ghost btn-sm meta-mono" onclick="event.stopPropagation();askShowDispatchChats(${c.id})" title="Chats about this dispatch">${chatCounts[c.id]} chat${chatCounts[c.id] > 1 ? 's' : ''}</button>` : ''}
+        ${s?.content ? `<button class="btn btn-sm" onclick="event.stopPropagation();askAbout(${s.id}, ${c.id})" title="Ask about this digest">Ask</button>` : ''}
         <button class="btn btn-ghost btn-sm" style="margin-left:4px" onclick="event.stopPropagation();digestToggleCard('${id}', event)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(${isOpen?90:0}deg);transition:transform 0.15s"><polyline points="9 6 15 12 9 18"/></svg>
         </button>
@@ -1499,6 +1552,227 @@ function digestToggleCard(id, event) {
     digestOpenCards.add(id);
   }
   renderDispatch();
+}
+
+// ── Ask: chat over the digests (chat.py) ──
+// One global corpus; a thread opened with "Ask about this" has a focus run whose digest is pre-loaded.
+let askThreads = [];
+let askThreadId = null;     // open thread, or null = new chat
+let askThread = null;       // GET /api/chats/{id}
+let askFocus = null;        // new chat only: { session_id, dispatch_id, label }
+let askDispatchFilter = null;
+let askResearch = false;
+let askDraft = '';
+let askMobileView = 'list'; // list | thread (mobile only)
+let askPollTimer = null;
+let chatCounts = {};
+
+async function loadChatCounts() {
+  try {
+    const r = await fetch('/api/chats/counts', { headers: headers() });
+    if (r.ok) chatCounts = await r.json();
+  } catch {}
+}
+
+async function loadChats() {
+  try {
+    const r = await fetch('/api/chats' + (askDispatchFilter ? `?dispatch_id=${askDispatchFilter}` : ''), { headers: headers() });
+    if (r.ok) askThreads = await r.json();
+  } catch {}
+}
+
+function showAsk() {
+  if (isMobile()) setMobileTab('ask');
+  else setTab('ask');
+}
+
+function askAbout(sessionId, dispatchId) {
+  const c = allDispatches.find(d => d.id === dispatchId);
+  askFocus = { session_id: sessionId, dispatch_id: dispatchId, label: c ? dispatchLabel(c, 40) : 'this run' };
+  askThreadId = null; askThread = null; askDraft = '';
+  askMobileView = 'thread';
+  closeRunDrawer();
+  showAsk();
+}
+
+function askShowDispatchChats(dispatchId) {
+  askDispatchFilter = dispatchId;
+  askThreadId = null; askThread = null; askFocus = null;
+  askMobileView = 'list';
+  showAsk();
+}
+
+function askNew() {
+  askThreadId = null; askThread = null; askFocus = null; askDraft = '';
+  askMobileView = 'thread';
+  renderAsk();
+}
+
+async function askOpen(id) {
+  askThreadId = id; askFocus = null; askDraft = '';
+  askMobileView = 'thread';
+  await loadChat();
+  renderAsk();
+}
+
+function askBack() {
+  askMobileView = 'list';
+  renderAsk();
+}
+
+async function loadChat() {
+  clearTimeout(askPollTimer);
+  if (!askThreadId) { askThread = null; return; }
+  try {
+    const r = await fetch(`/api/chats/${askThreadId}`, { headers: headers() });
+    askThread = r.ok ? await r.json() : null;
+  } catch { askThread = null; }
+  if (askThread?.job) askPollTimer = setTimeout(pollChat, 2000);
+}
+
+async function pollChat() {
+  const id = askThreadId;
+  const wasBusy = !!askThread?.job;
+  await loadChat();
+  if (id !== askThreadId) return;
+  if (wasBusy && !askThread?.job) { await Promise.all([loadChats(), loadChatCounts()]); renderAsk(); }
+  else renderAskMessages();
+}
+
+async function renderAsk() {
+  const el = document.getElementById('content');
+  if (!el.querySelector('.ask')) el.innerHTML = `<div class="ask"><aside class="ask-list" id="ask-list"></aside><section class="ask-thread" id="ask-thread"></section></div>`;
+  const ask = el.querySelector('.ask');
+  ask.dataset.view = askMobileView;
+  if (!askThreads.length) await loadChats();
+  renderAskList();
+  renderAskThread();
+}
+
+function renderAskList() {
+  const box = document.getElementById('ask-list');
+  if (!box) return;
+  const filterLabel = askDispatchFilter ? dispatchLabel(allDispatches.find(d => d.id === askDispatchFilter) || { label: 'dispatch' }, 30) : '';
+  const items = askThreads.map(t => `<button class="ask-item${t.id === askThreadId ? ' active' : ''}" onclick="askOpen(${t.id})">
+      <div class="ask-item-title">${esc(t.title || 'Untitled')}</div>
+      <div class="ask-item-meta">${t.focus_dispatch_id ? `<span class="tag-chip">${esc(dispatchLabel(allDispatches.find(d => d.id === t.focus_dispatch_id) || { label: '?' }, 22))}</span>` : ''}
+        <span class="meta-mono">${esc(fmtRelTime(t.updated_at))} · ${t.turns} q</span></div>
+    </button>`).join('');
+  box.innerHTML = `<div class="ask-list-hdr">
+      <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center" onclick="askNew()">New chat</button>
+    </div>
+    ${askDispatchFilter ? `<div class="ask-filter"><span class="meta">Chats about</span> <button class="tag-chip active" onclick="askDispatchFilter=null;loadChats().then(renderAsk)" title="Show all chats">${esc(filterLabel)} ×</button></div>` : ''}
+    <div class="ask-items">${items || `<div class="ask-empty">${askDispatchFilter ? 'No chats about this dispatch yet.' : 'No chats yet. Ask anything about your digests.'}</div>`}</div>`;
+}
+
+const ASK_SUGGEST_FOCUS = ["What's new here since the last run?", 'Which of these matter for me?', 'Show the sources for the top item'];
+const ASK_SUGGEST = ['Anything I need to act on today?', 'What changed in World since yesterday?', 'Summarize my security digests'];
+
+function renderAskThread() {
+  const box = document.getElementById('ask-thread');
+  if (!box) return;
+  const t = askThread;
+  const focusLabel = t ? t.focus_dispatch : askFocus?.label;
+  const title = t ? esc(t.title || 'Chat') : 'New chat';
+  const trash = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 20 7"/><path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>`;
+  box.innerHTML = `<div class="ask-thread-hdr">
+      <button class="btn btn-ghost btn-sm ask-back" onclick="askBack()" aria-label="Back to chats">‹ Chats</button>
+      <div class="ask-thread-title">${title}</div>
+      ${focusLabel ? `<span class="tag-chip" title="Opened from this digest; its text is pre-loaded">about: ${esc(focusLabel)}${!t ? ` <button class="chip-x" onclick="askFocus=null;renderAskThread()" aria-label="Remove focus">×</button>` : ''}</span>` : ''}
+      ${t ? `<button class="btn btn-ghost btn-sm btn-danger" style="margin-left:auto" title="Delete chat" onclick="askDelete(${t.id})">${trash}</button>` : ''}
+    </div>
+    <div class="ask-msgs" id="ask-msgs"></div>
+    <div class="ask-composer">
+      <textarea class="textarea" id="ask-input" rows="2" placeholder="Ask about your digests…" oninput="askDraft=this.value"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();askSend()}">${esc(askDraft)}</textarea>
+      <div class="ask-composer-row">
+        <label class="ask-research" title="Let this message search the web and read pages, not just your digests">
+          <input type="checkbox" ${askResearch ? 'checked' : ''} onchange="askResearch=this.checked"> Research (web)
+        </label>
+        <span class="meta" id="ask-status"></span>
+        <button class="btn btn-primary btn-sm" id="ask-send" style="margin-left:auto" onclick="askSend()">Send</button>
+      </div>
+    </div>`;
+  renderAskMessages();
+}
+
+function askTurns(t) {
+  // Pair each question with its answer (or error) and the tool steps taken in between.
+  const turns = [];
+  let cur = null;
+  for (const m of t.messages) {
+    if (m.role === 'user') { cur = { q: m, a: null, steps: [] }; turns.push(cur); }
+    else if (cur && !cur.a && (m.role === 'assistant' || m.role === 'error')) cur.a = m;
+  }
+  turns.forEach((tu, i) => {
+    const from = tu.q.created_at, to = tu.a?.created_at || turns[i + 1]?.q.created_at || '￿';
+    tu.steps = t.steps.filter(s => s.created_at >= from && s.created_at <= to);
+  });
+  return turns;
+}
+
+function renderAskMessages() {
+  const box = document.getElementById('ask-msgs');
+  if (!box) return;
+  const t = askThread;
+  const busy = !!t?.job;
+  const send = document.getElementById('ask-send');
+  if (send) send.disabled = busy;
+  const status = document.getElementById('ask-status');
+  if (status) status.textContent = '';
+  if (!t) {
+    const sugg = askFocus ? ASK_SUGGEST_FOCUS : ASK_SUGGEST;
+    box.innerHTML = `<div class="ask-intro">
+      <p>${askFocus ? `Ask about the <strong>${esc(askFocus.label)}</strong> digest. Its text is already loaded, and the chat can still open your other digests.` : 'Ask about your digests. The chat opens the ones it needs: the catalog first, then individual digests, sections, and the sources a run read.'}</p>
+      <p class="meta">The web is used only when you tick <strong>Research</strong>.</p>
+      <div class="ask-suggest">${sugg.map(s => `<button class="btn btn-sm" onclick="askDraft=${esc(JSON.stringify(s))};document.getElementById('ask-input').value=askDraft;document.getElementById('ask-input').focus()">${esc(s)}</button>`).join('')}</div>
+    </div>`;
+    return;
+  }
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  box.innerHTML = askTurns(t).map((tu, i, all) => {
+    const pending = busy && i === all.length - 1 && !tu.a;
+    const steps = tu.steps.length ? `<details class="ask-steps"><summary>${tu.steps.length} step${tu.steps.length > 1 ? 's' : ''}: ${esc(tu.steps.map(s => s.label).join(' → '))}</summary>
+        <ol>${tu.steps.map(s => `<li>${esc(s.label)} <span class="meta-mono">${s.duration_ms != null ? (s.duration_ms / 1000).toFixed(1) + 's' : ''}</span></li>`).join('')}</ol></details>` : '';
+    let answer = '';
+    if (tu.a?.role === 'assistant') answer = `<div class="md ask-a">${renderMd(tu.a.content)}</div>`;
+    else if (tu.a?.role === 'error') answer = `<div class="ask-err">${esc(tu.a.content)}</div>`;
+    else if (pending) {
+      const j = t.job;
+      const where = j.status === 'queued' ? `Waiting for the model${j.queue_position > 1 ? ` · ${j.queue_position - 1} ahead` : ''}${[...activeJobs.values()].some(x => x.status === 'running') ? ' (a dispatch run is using it)' : ''}…` : `${j.step || 'Thinking'}…`;
+      answer = `<div class="ask-pending"><i class="run-dot"></i> ${esc(where)}</div>`;
+    }
+    return `<div class="ask-turn"><div class="ask-q">${esc(tu.q.content)}</div>${steps}${answer}</div>`;
+  }).join('');
+  if (atBottom || busy) box.scrollTop = box.scrollHeight;
+}
+
+async function askSend() {
+  const input = document.getElementById('ask-input');
+  const question = (input?.value || '').trim();
+  if (!question || askThread?.job) return;
+  const status = document.getElementById('ask-status');
+  const body = { question, research: askResearch };
+  let url = '/api/chats';
+  if (askThreadId) url = `/api/chats/${askThreadId}/turns`;
+  else if (askFocus) body.focus_session_id = askFocus.session_id;
+  try {
+    const r = await fetch(url, { method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) { if (status) status.textContent = (await r.json().catch(() => ({}))).detail || `Error ${r.status}`; return; }
+    const res = await r.json();
+    askThreadId = res.chat_id; askFocus = null; askDraft = ''; askResearch = false;
+    await Promise.all([loadChat(), loadChats(), loadChatCounts()]);
+    renderAsk();
+  } catch { if (status) status.textContent = 'Could not reach dispatch'; }
+}
+
+async function askDelete(id) {
+  if (!confirm('Delete this chat?')) return;
+  const r = await fetch(`/api/chats/${id}`, { method: 'DELETE', headers: headers() });
+  if (!r.ok) { setStatus((await r.json().catch(() => ({}))).detail || 'Could not delete'); return; }
+  askThreadId = null; askThread = null; askMobileView = 'list';
+  await Promise.all([loadChats(), loadChatCounts()]);
+  renderAsk();
 }
 
 // ── Agents Table ── (see renderDispatchesTable below)
@@ -1733,6 +2007,7 @@ function renderRunDrawer(s) {
   const cronId = s.dispatch_id;
   document.getElementById('run-drawer-ftr').innerHTML = `
     <button class="btn btn-sm" onclick="rerunSession(${s.id})">${playIcon} Re-run</button>
+    ${cronId && s.messages.some(m => m.role === 'assistant') ? `<button class="btn btn-sm" onclick="askAbout(${s.id}, ${cronId})">Ask about this</button>` : ''}
     ${cronId ? '' : `<button class="btn btn-sm" onclick="promoteToAgent(${s.id})">Promote to agent</button>`}
   `;
 }
@@ -2813,6 +3088,7 @@ async function loadDigest() {
     const r = await fetch('/api/dispatches/digest', { headers: headers() });
     if (!r.ok) return;
     digestItems = await r.json();
+    await loadChatCounts();
     updateTopbar();
   } catch {}
 }
@@ -2916,7 +3192,7 @@ async function pollJobs() {
     const r = await fetch('/api/jobs/active', { headers: headers() });
     if (r.ok) {
       const prev = activeJobs;
-      activeJobs = new Map((await r.json()).filter(j => j.session_id).map(j => [j.job_id, j]));
+      activeJobs = new Map((await r.json()).filter(j => j.session_id && j.kind !== 'chat').map(j => [j.job_id, j]));
       const finished = [...prev.values()].filter(j => !activeJobs.has(j.job_id));
       const changed = finished.length || [...activeJobs.values()].some(j => prev.get(j.job_id)?.status !== j.status);
       if (finished.length) await jobsFinished(finished);
@@ -3409,7 +3685,7 @@ async function loadSettings() {
       <div>
         <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Personalization</div>
         ${f('s-location', 'Location', inp('s-location', val('LOCATION'), 'text', 'e.g. San Francisco, CA'), 'Used to localize search results and agent context')}
-        ${f('s-profile', 'About me', inp('s-profile', val('USER_PROFILE'), 'text', 'e.g. My setup: Ubuntu ThinkPad (Ollama, Tailscale), Raspberry Pi, Mac. Interests: …'), 'One line the digest chat knows about you, so it can judge what is relevant to you')}
+        ${f('s-profile', 'About me', inp('s-profile', val('USER_PROFILE'), 'text', 'e.g. My setup: Ubuntu ThinkPad (Ollama, Tailscale), Raspberry Pi, Mac. Interests: …'), 'One line the digest chat knows about you, to judge what matters to you. List what you run and care about; avoid "no X" (the local model can misread negations)')}
       </div>
       <hr style="border:none;border-top:1px solid var(--line)">
       <details>
