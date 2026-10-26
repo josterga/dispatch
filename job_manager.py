@@ -18,6 +18,7 @@ from pipeline import MODEL, create_pipeline
 # the rest are recorded as missed. 0 = never catch up (only record).
 CATCH_UP_HOURS = float(os.getenv("DISPATCH_CATCH_UP_HOURS", "12"))
 _MAX_MISSED_RECORDS = 24  # per dispatch and startup, so a long outage doesn't flood the run list
+_JOB_TTL_SECONDS = 3600  # finished jobs stay in memory this long (the UI reads their final status), then go
 
 
 _DOW_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
@@ -162,6 +163,12 @@ class JobManager:
                     }
         return None
 
+    def _prune(self) -> None:
+        """Drop jobs that finished over _JOB_TTL_SECONDS ago (results stay in the DB). Caller holds the lock."""
+        cutoff = time.monotonic() - _JOB_TTL_SECONDS
+        for jid in [jid for jid, j in self._jobs.items() if j.get("finished_at", cutoff) < cutoff]:
+            del self._jobs[jid]
+
     def _queue_position(self, job_id: str) -> Optional[int]:
         """1-based place among queued jobs (dict order = submit order). Caller holds the lock."""
         queued = [jid for jid, j in self._jobs.items() if j["status"] == "queued"]
@@ -214,6 +221,7 @@ class JobManager:
         )
 
         with self._lock:
+            self._prune()
             self._jobs[job_id] = {
                 "status": "queued",
                 "agent": agent_name,
@@ -232,6 +240,7 @@ class JobManager:
         done_event = threading.Event()
 
         with self._lock:
+            self._prune()
             self._jobs[job_id] = {
                 "status": "queued",
                 "session_id": None, "result": None, "error": None,
@@ -331,6 +340,7 @@ class JobManager:
         db.log_message(session_id, "user", prompt)
 
         with self._lock:
+            self._prune()
             self._jobs[job_id] = {
                 "status": "queued",
                 "agent": agent_name,
@@ -367,6 +377,7 @@ class JobManager:
                 db.set_session_logs(session_id, tee.getvalue())
                 with self._lock:
                     self._jobs[job_id]["status"] = _status
+                    self._jobs[job_id]["finished_at"] = time.monotonic()
                     self._jobs[job_id].pop("tee", None)
                     if _status == "done":
                         self._jobs[job_id]["result"] = _result
@@ -429,6 +440,7 @@ class JobManager:
             db.set_session_logs(session_id, tee.getvalue())
             with self._lock:
                 self._jobs[job_id]["status"] = _status
+                self._jobs[job_id]["finished_at"] = time.monotonic()
                 self._jobs[job_id].pop("tee", None)
                 if _status == "done":
                     self._jobs[job_id]["result"] = _result
