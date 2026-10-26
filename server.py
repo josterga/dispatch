@@ -295,7 +295,7 @@ async def cancel_job(job_id: str, request: Request):
 
 class ChatTurnRequest(BaseModel):
     question: str
-    research: bool = False                  # web_search / web_fetch available this turn
+    research: bool = True                   # web_search / web_fetch available this turn (default on)
     focus_session_id: Optional[int] = None  # new threads only: the run the chat was opened from
 
 

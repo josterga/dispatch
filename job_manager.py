@@ -102,6 +102,8 @@ def _current_step(logs: str) -> Optional[str]:
 def _notify(client, session_id: int, title: str, result: Optional[str], verdict: Optional[dict]) -> None:
     """Push summary + ntfy, recorded as one "notify" event of the run. Failed or empty runs send
     only what went wrong; degraded runs lead with their self-check results."""
+    if not notify.ENABLED:
+        return
     note = metrics.problem_note(verdict) if notify.ALERT_PROBLEMS else None
     no_answer = (verdict or {}).get("status") in ("error", "empty")  # nothing worth summarizing
     if no_answer and not note:

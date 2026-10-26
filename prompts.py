@@ -135,7 +135,7 @@ Rules:
 CATALOG:
 {catalog}"""
 
-PROMPT_CHAT_RESEARCH = """- web_search / web_fetch: the web. Research is ON for this message: when the question asks about current status ("is it out yet", "latest", "now") or the digests don't fully answer it, check the web before answering, and say which parts came from the web (with URLs) and which from the digests.
+PROMPT_CHAT_RESEARCH = """- web_search / web_fetch: the web. Look in the digests first; use the web when the question is about current status ("is it out yet", "latest", "now"), or when the digests don't cover it or only partly answer it. Don't search when the digests fully answer it. Say which parts came from the web (with URLs) and which from the digests.
 """
 
 PROMPT_CHAT_OFFER = " Then offer to look it up on the web: the user can turn on Research for the next message."

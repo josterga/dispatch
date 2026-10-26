@@ -7,6 +7,8 @@ _NTFY_URL = os.getenv("NTFY_URL", "https://ntfy.sh").rstrip("/")
 _NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
 _NTFY_TOKEN = os.getenv("NTFY_TOKEN", "")
 _DISPATCH_URL = os.getenv("DISPATCH_URL", "")
+# Push notifications are off unless NTFY_ENABLED=1 (and a topic is set); off also skips the per-run summary model call.
+ENABLED = os.getenv("NTFY_ENABLED", "0") == "1" and bool(_NTFY_TOPIC)
 # Flag degraded runs (⚠ title, reasons first, high priority) and notify on failed runs. 0 = off.
 ALERT_PROBLEMS = os.getenv("NTFY_ON_PROBLEMS", "1") != "0"
 
@@ -46,9 +48,9 @@ def summarize(client, result: str, session_id=None) -> str:
 
 
 def send(title: str, body: str, tags: list[str] = (), priority: str = "default") -> tuple[Optional[int], Optional[str]]:
-    """Returns (HTTP status, error); (None, "not configured") without a topic."""
-    if not _NTFY_TOPIC:
-        return None, "not configured"
+    """Returns (HTTP status, error); (None, "disabled") unless NTFY_ENABLED=1 and a topic is set."""
+    if not ENABLED:
+        return None, "disabled"
     headers = {
         "Title": title,
         "Tags": ",".join(tags),

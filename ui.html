@@ -282,6 +282,7 @@ body.theme-light .seg-btn.active { background: white; box-shadow: 0 1px 3px oklc
 .ask-composer { border-top: 1px solid var(--line); padding: 10px 20px 12px; }
 .ask-composer textarea { width: 100%; resize: vertical; min-height: 44px; max-height: 200px; font-size: 13.5px; }
 .ask-composer-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.ask-composer .ask-focus-sel { width: auto; max-width: 220px; padding: 4px 8px; font-size: 12.5px; }
 .ask-research { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--fg-2); cursor: pointer; }
 @media (max-width: 640px) {
   .ask { grid-template-columns: minmax(0, 1fr); }
@@ -291,7 +292,9 @@ body.theme-light .seg-btn.active { background: white; box-shadow: 0 1px 3px oklc
   .ask-thread-hdr { padding: 8px 12px; }
   .ask-msgs { padding: 12px 14px; }
   .ask-composer { padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px)); }
-  .ask-composer textarea { font-size: 16px; }  /* under 16px, iOS Safari zooms in on focus */
+  .ask-composer textarea { font-size: 16px; }
+  .ask-composer-row { flex-wrap: wrap; }
+  .ask-composer .ask-focus-sel { max-width: 100%; flex: 1 1 100%; font-size: 16px; }  /* under 16px, iOS Safari zooms in on focus */
 }
 .sb-filter { padding: 8px 14px 10px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
 .sb-filter select, .mob-filter select { width: 100%; padding: 5px 9px; font-size: 12.5px; }
@@ -1561,7 +1564,7 @@ let askThreadId = null;     // open thread, or null = new chat
 let askThread = null;       // GET /api/chats/{id}
 let askFocus = null;        // new chat only: { session_id, dispatch_id, label }
 let askDispatchFilter = null;
-let askResearch = false;
+let askResearch = true;   // web on by default; untick for a digests-only message
 let askDraft = '';
 let askMobileView = 'list'; // list | thread (mobile only)
 let askPollTimer = null;
@@ -1678,7 +1681,7 @@ function renderAskThread() {
   box.innerHTML = `<div class="ask-thread-hdr">
       <button class="btn btn-ghost btn-sm ask-back" onclick="askBack()" aria-label="Back to chats">‹ Chats</button>
       <div class="ask-thread-title">${title}</div>
-      ${focusLabel ? `<span class="tag-chip" title="Opened from this digest; its text is pre-loaded">about: ${esc(focusLabel)}${!t ? ` <button class="chip-x" onclick="askFocus=null;renderAskThread()" aria-label="Remove focus">×</button>` : ''}</span>` : ''}
+      ${t && focusLabel ? `<span class="tag-chip" title="This chat started from this digest; its text is pre-loaded">about: ${esc(focusLabel)}</span>` : ''}
       ${t ? `<button class="btn btn-ghost btn-sm btn-danger" style="margin-left:auto" title="Delete chat" onclick="askDelete(${t.id})">${trash}</button>` : ''}
     </div>
     <div class="ask-msgs" id="ask-msgs"></div>
@@ -1686,6 +1689,7 @@ function renderAskThread() {
       <textarea class="textarea" id="ask-input" rows="2" placeholder="Ask about your digests…" oninput="askDraft=this.value"
         onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();askSend()}">${esc(askDraft)}</textarea>
       <div class="ask-composer-row">
+        ${t ? '' : askFocusPickerHTML()}
         <label class="ask-research" title="Let this message search the web and read pages, not just your digests">
           <input type="checkbox" ${askResearch ? 'checked' : ''} onchange="askResearch=this.checked"> Research (web)
         </label>
@@ -1693,6 +1697,23 @@ function renderAskThread() {
         <button class="btn btn-primary btn-sm" id="ask-send" style="margin-left:auto" onclick="askSend()">Send</button>
       </div>
     </div>`;
+  renderAskMessages();
+}
+
+// New chats: pick a digest to focus on (its latest run is pre-loaded); default = all digests.
+function askFocusPickerHTML() {
+  const opts = digestItems.filter(x => x.session?.content)
+    .map(x => ({ id: x.dispatch.id, sid: x.session.id, label: dispatchLabel(x.dispatch, 40) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  return `<select class="input ask-focus-sel" onchange="askSetFocus(this.value)" aria-label="Focus on a digest">
+    <option value="">All digests</option>
+    ${opts.map(o => `<option value="${o.id}"${askFocus?.dispatch_id === o.id ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}
+  </select>`;
+}
+
+function askSetFocus(dispatchId) {
+  const item = digestItems.find(x => x.dispatch.id === +dispatchId && x.session?.content);
+  askFocus = item ? { session_id: item.session.id, dispatch_id: item.dispatch.id, label: dispatchLabel(item.dispatch, 40) } : null;
   renderAskMessages();
 }
 
@@ -1724,7 +1745,7 @@ function renderAskMessages() {
     const sugg = askFocus ? ASK_SUGGEST_FOCUS : ASK_SUGGEST;
     box.innerHTML = `<div class="ask-intro">
       <p>${askFocus ? `Ask about the <strong>${esc(askFocus.label)}</strong> digest. Its text is already loaded, and the chat can still open your other digests.` : 'Ask about your digests. The chat opens the ones it needs: the catalog first, then individual digests, sections, and the sources a run read.'}</p>
-      <p class="meta">The web is used only when you tick <strong>Research</strong>.</p>
+      <p class="meta">With <strong>Research</strong> on (the default) it also checks the web when your digests don't cover the question or it's about current status. Untick it for digests only.</p>
       <div class="ask-suggest">${sugg.map(s => `<button class="btn btn-sm" onclick="askDraft=${esc(JSON.stringify(s))};document.getElementById('ask-input').value=askDraft;document.getElementById('ask-input').focus()">${esc(s)}</button>`).join('')}</div>
     </div>`;
     return;
@@ -1760,7 +1781,7 @@ async function askSend() {
     const r = await fetch(url, { method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok) { if (status) status.textContent = (await r.json().catch(() => ({}))).detail || `Error ${r.status}`; return; }
     const res = await r.json();
-    askThreadId = res.chat_id; askFocus = null; askDraft = ''; askResearch = false;
+    askThreadId = res.chat_id; askFocus = null; askDraft = ''; askResearch = true;
     await Promise.all([loadChat(), loadChats(), loadChatCounts()]);
     renderAsk();
   } catch { if (status) status.textContent = 'Could not reach dispatch'; }
