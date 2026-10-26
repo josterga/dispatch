@@ -142,6 +142,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
     # Migrate columns that may be absent in older databases before creating indexes
     for col, typedef in [
         ("color", "INTEGER"),
+        ("tags", "TEXT"),  # JSON list of lowercase tags
     ]:
         try:
             conn.execute(f"ALTER TABLE agents ADD COLUMN {col} {typedef}")
@@ -166,6 +167,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         ("max_runs",      "INTEGER"),
         ("run_count",     "INTEGER NOT NULL DEFAULT 0"),
         ("timezone",      "TEXT"),
+        ("tags",          "TEXT"),  # JSON list; the agent's tags apply too
     ]:
         try:
             conn.execute(f"ALTER TABLE dispatches ADD COLUMN {col} {typedef}")
@@ -499,15 +501,16 @@ def create_dispatch(
     repeat_until: Optional[str] = None,
     max_runs: Optional[int] = None,
     timezone_name: str = "UTC",
+    tags: Optional[list] = None,
 ) -> int:
     conn = _get_conn()
     cur = conn.execute(
         """INSERT INTO dispatches
                (agent, prompt, schedule, label, enabled, run_on_create, created_at,
-                trigger_type, repeat_until, max_runs, run_count, timezone)
-           VALUES (?,?,?,?,1,?,?,?,?,?,0,?)""",
+                trigger_type, repeat_until, max_runs, run_count, timezone, tags)
+           VALUES (?,?,?,?,1,?,?,?,?,?,0,?,?)""",
         (agent, prompt, schedule, label, int(run_on_create), _now(),
-         trigger_type, repeat_until, max_runs, timezone_name),
+         trigger_type, repeat_until, max_runs, timezone_name, json.dumps(clean_tags(tags))),
     )
     conn.commit()
     return cur.lastrowid
@@ -599,14 +602,16 @@ def update_dispatch(
     repeat_until: Optional[str] = None,
     max_runs: Optional[int] = None,
     timezone_name: str = "UTC",
+    tags: Optional[list] = None,
 ) -> None:
     conn = _get_conn()
     conn.execute(
         """UPDATE dispatches
            SET agent=?, prompt=?, schedule=?, label=?,
-               trigger_type=?, repeat_until=?, max_runs=?, timezone=?
+               trigger_type=?, repeat_until=?, max_runs=?, timezone=?, tags=?
            WHERE id=?""",
-        (agent, prompt, schedule, label, trigger_type, repeat_until, max_runs, timezone_name, dispatch_id),
+        (agent, prompt, schedule, label, trigger_type, repeat_until, max_runs, timezone_name,
+         json.dumps(clean_tags(tags)), dispatch_id),
     )
     conn.commit()
 
@@ -703,7 +708,7 @@ _AGENT_FIELDS = [
     "sources", "sub_queries", "tool_bindings", "direct_sources",
     "freshness", "planner_query_count", "max_validator_loops",
     "validate_links", "fetch_content",
-    "is_builtin", "color", "created_at", "updated_at",
+    "is_builtin", "color", "tags", "created_at", "updated_at",
 ]
 
 
@@ -812,10 +817,24 @@ def seed_agents_from_yaml(seeds_dir: Optional[Path] = None) -> None:
     conn.commit()
 
 
+def clean_tags(tags) -> list[str]:
+    """Lowercase, trimmed, unique, in order; accepts a list or a comma-separated string."""
+    if isinstance(tags, str):
+        tags = tags.split(",")
+    out: list[str] = []
+    for t in tags or []:
+        t = " ".join(str(t).strip().lower().split())
+        if t and t not in out:
+            out.append(t)
+    return out
+
+
 def _normalise_agent_yaml(data: dict) -> None:
     """Convert YAML parsed dict into DB-ready types in-place."""
     data.setdefault("is_builtin", 1)
     # JSON-encode list/dict fields
+    if "tags" in data:
+        data["tags"] = json.dumps(clean_tags(data["tags"]))
     for key in ("sources", "tool_bindings", "direct_sources"):
         v = data.get(key)
         if isinstance(v, list):

@@ -698,6 +698,10 @@ details.ev summary .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: 
 .agents-table th .arr { color: var(--fg-4); margin-left: 3px; }
 .tbl-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .tbl-bar .input { max-width: 280px; padding: 5px 9px; font-size: 12.5px; }
+.tag-chip { display: inline-block; font-size: 10.5px; line-height: 1; padding: 3px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--fg-3); background: var(--bg); font-family: var(--font-mono); }
+button.tag-chip { cursor: pointer; }
+button.tag-chip.active { color: var(--fg); border-color: var(--accent); background: color-mix(in oklab, var(--accent) 14%, var(--bg)); }
+.tag-row { display: flex; flex-wrap: wrap; gap: 4px; }
 .spark-bar.t-good { background: var(--st-good); } .spark-bar.t-warn { background: var(--st-warn); }
 .spark-bar.t-crit { background: var(--st-crit); } .spark-bar.t-none { background: var(--line-2); }
 
@@ -969,6 +973,7 @@ let sheetTime = '08:00';
 let sheetDays = [1,2,3,4,5];
 let sheetScheduleStr = '0 8 * * *';
 let sheetLabel = '';
+let sheetTags = '';  // the dispatch's own tags, comma-separated while editing
 let sheetPrompt = '';
 
 // ── Categories ──
@@ -1080,6 +1085,21 @@ function humanizeCron(expr, tz) {
 // Older versions saved humanizeCron text as the label when none was given; it goes stale when the schedule changes.
 function isAutoLabel(label) {
   return !!label && /^(Daily at|(Sun|Mon|Tue|Wed|Thu|Fri|Sat)s? at|(Sun|Mon|Tue|Wed|Thu|Fri|Sat)s?[\/–])/.test(label);
+}
+
+// Tags: JSON lists on agents and dispatches; a dispatch has its own plus its agent's.
+function parseTags(v) {
+  if (Array.isArray(v)) return v;
+  try { const t = JSON.parse(v || '[]'); return Array.isArray(t) ? t : []; } catch { return []; }
+}
+function splitTags(str) {
+  return [...new Set((str || '').split(',').map(t => t.trim().toLowerCase().replace(/\s+/g, ' ')).filter(Boolean))];
+}
+function dispatchTags(c) {
+  return [...new Set([...parseTags(allAgents.find(a => a.name === c.agent)?.tags), ...parseTags(c.tags)])];
+}
+function tagChipsHTML(tags) {
+  return tags.length ? `<div class="tag-row" style="margin-top:4px">${tags.map(t => `<span class="tag-chip">${esc(t)}</span>`).join('')}</div>` : '';
 }
 
 // Every run of the dispatch; with a run limit, the tip shows how many scheduled runs count toward it.
@@ -2336,6 +2356,7 @@ function drawDashCharts() {
 // ── Active table: per-dispatch stats from /api/stats ──
 let activeSort = { key: 'next', dir: 1 };
 let activeQuery = '';
+let activeTag = null;
 function dispatchRunStats(id, runs) {
   const mine = runs.filter(r => r.dispatch_id === id && r.status);
   const done = mine.filter(r => r.status === 'done' && !r.degraded).length;
@@ -2363,6 +2384,10 @@ function filterActive(q) {
   activeQuery = q;
   renderActiveRows();
 }
+function filterActiveTag(t) {
+  activeTag = activeTag === t ? null : t;
+  renderContent();
+}
 
 let activeRowsData = [];
 let activeKind = 'active';
@@ -2381,8 +2406,10 @@ function renderDispatchesTable(dispatches, kind) {
   activeRowsData = dispatches.map(c => ({ c, st: dispatchRunStats(c.id, runs), next: kind === 'active' ? nextRun(c.schedule, null, c.timezone) : null }));
   const th = (key, label, cls) => `<th class="sort${cls ? ' ' + cls : ''}" onclick="sortActive('${key}')" aria-sort="${activeSort.key === key ? (activeSort.dir > 0 ? 'ascending' : 'descending') : 'none'}">${label}<span class="arr">${activeSort.key === key ? (activeSort.dir > 0 ? '▲' : '▼') : ''}</span></th>`;
   el.innerHTML = `<div style="padding:16px 24px 80px">
-    <div class="tbl-bar"><input class="input" placeholder="Filter by name, agent or prompt" value="${esc(activeQuery)}" oninput="filterActive(this.value)" aria-label="Filter dispatches"><span class="meta" id="tbl-count"></span>
+    <div class="tbl-bar"><input class="input" placeholder="Filter by name, agent, prompt or tag" value="${esc(activeQuery)}" oninput="filterActive(this.value)" aria-label="Filter dispatches"><span class="meta" id="tbl-count"></span>
       <span class="meta" style="margin-left:auto">Success and average over 30 days</span></div>
+    ${(() => { const tags = [...new Set(dispatches.flatMap(dispatchTags))].sort(); if (activeTag && !tags.includes(activeTag)) activeTag = null;
+      return tags.length ? `<div class="tag-row" style="margin-bottom:10px">${tags.map(t => `<button class="tag-chip${t === activeTag ? ' active' : ''}" onclick="filterActiveTag('${esc(t).replace(/'/g, "\\'")}')">${esc(t)}</button>`).join('')}</div>` : ''; })()}
     <div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow-x:auto">
       <table class="agents-table">
         <thead><tr style="background:var(--panel-2)">
@@ -2401,8 +2428,9 @@ function renderActiveRows() {
   if (!tb) return;
   const kind = activeKind;
   const q = activeQuery.trim().toLowerCase();
-  const rows = activeRowsData.filter(x => !q || [dispatchLabel(x.c, 80), x.c.agent, x.c.prompt, allAgents.find(a => a.name === x.c.agent)?.label]
-    .some(v => (v || '').toLowerCase().includes(q)));
+  const rows = activeRowsData.filter(x => (!activeTag || dispatchTags(x.c).includes(activeTag))
+    && (!q || [dispatchLabel(x.c, 80), x.c.agent, x.c.prompt, allAgents.find(a => a.name === x.c.agent)?.label, ...dispatchTags(x.c)]
+      .some(v => (v || '').toLowerCase().includes(q))));
   const val = x => {
     switch (activeSort.key) {
       case 'name': return dispatchLabel(x.c, 80).toLowerCase();
@@ -2417,7 +2445,7 @@ function renderActiveRows() {
   };
   rows.sort((a, b) => { const va = val(a), vb = val(b); return (va < vb ? -1 : va > vb ? 1 : 0) * activeSort.dir; });
   const cnt = document.getElementById('tbl-count');
-  if (cnt) cnt.textContent = q ? `${rows.length} of ${activeRowsData.length}` : '';
+  if (cnt) cnt.textContent = q || activeTag ? `${rows.length} of ${activeRowsData.length}` : '';
 
   const playIcon = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="none"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor"/></svg>`;
   const editIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16v4z"/><line x1="14" y1="6" x2="18" y2="10"/></svg>`;
@@ -2439,7 +2467,7 @@ function renderActiveRows() {
       : '<span class="meta">—</span>';
     return `<tr onclick="openAgentSheet(${c.id})">
       <td>${pillHTML(c.agent)}</td>
-      <td><div style="font-weight:500">${esc(dispatchLabel(c, 40))}</div><div style="color:var(--fg-3);font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.prompt)}</div></td>
+      <td><div style="font-weight:500">${esc(dispatchLabel(c, 40))}</div><div style="color:var(--fg-3);font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.prompt)}</div>${tagChipsHTML(dispatchTags(c))}</td>
       <td>${schedCell}</td>
       <td>${lastCell}</td>
       <td class="r"><span class="mono" style="color:var(--fg-2)">${runsCountHTML(c, true)}</span></td>
@@ -2486,6 +2514,7 @@ async function openAgentSheet(dispatchIdOrObj) {
   sheetDays = [1,2,3,4,5];
   sheetLabel = isAutoLabel(dispatch?.label) ? '' : (dispatch?.label || '');
   sheetPrompt = dispatch?.prompt || '';
+  sheetTags = parseTags(dispatch?.tags).join(', ');
 
   if (dispatch?.schedule && dispatch.trigger_type !== 'once') {
     sheetScheduleStr = dispatch.schedule;
@@ -2574,6 +2603,11 @@ function renderSheetBody() {
       <input class="input" id="s-label" placeholder="e.g. SF Food Briefing" value="${labelVal}" oninput="sheetLabel=this.value">
       <div class="field-hint">Short, human-readable</div>
     </div>
+    <div class="field">
+      <div class="field-lbl">Tags</div>
+      <input class="input" id="s-tags" placeholder="e.g. world, daily" value="${esc(sheetTags)}" oninput="sheetTags=this.value">
+      <div class="field-hint">Comma-separated, for grouping. The agent's tags${(() => { const t = parseTags(allAgents.find(a => a.name === sheetCat)?.tags); return t.length ? ` (${esc(t.join(', '))})` : ''; })()} apply too.</div>
+    </div>
     ${(() => { const needsPrompt = allAgents.find(a => a.name === sheetCat)?.requires_prompt; return `<div class="field">
       <div class="field-lbl">Prompt${needsPrompt ? ' *' : ''}</div>
       <textarea class="textarea" id="s-prompt" rows="4" placeholder="${needsPrompt ? 'Required — what should the agent answer or fetch?' : 'Optional — leave blank to use the agent\'s built-in goal'}" style="resize:vertical" oninput="sheetPrompt=this.value">${promptVal}</textarea>
@@ -2651,6 +2685,7 @@ async function saveAgent() {
     trigger_type: 'cron',
     repeat_until: untilVal ? new Date(untilVal + 'T23:59:59').toISOString() : null,  // through the end of that local day
     max_runs: maxVal ? parseInt(maxVal) : null,
+    tags: splitTags(sheetTags),
   };
   try {
     const isEdit = !!sheetDispatch?.id;
@@ -3039,6 +3074,7 @@ async function openAgentConfigSheet(name) {
     ${f('cfg-name', 'Name *', `<input id="cfg-name" type="text" value="${esc(agent?.name ?? '')}" placeholder="my-agent" ${name?'readonly':''} style="${nameInputStyle}">`)}
     ${f('cfg-label', 'Label', inp('cfg-label', agent?.label))}
     ${f('cfg-desc', 'Description', inp('cfg-desc', agent?.description))}
+    ${f('cfg-tags', 'Tags', inp('cfg-tags', parseTags(agent?.tags).join(', '), 'text', 'e.g. world, news'), 'Comma-separated; every dispatch of this agent gets them')}
     <div><label style="display:block;font-size:12px;font-weight:500;color:var(--fg-2);margin-bottom:8px">Color</label><input type="hidden" id="cfg-color" value="${initHue}"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${colorSwatches}</div></div>
     <hr style="border:none;border-top:1px solid var(--line)">
     <div>
@@ -3200,6 +3236,7 @@ async function saveAgentConfig() {
     fetch_content: isDirect ? false : (document.getElementById('cfg-fetch')?.checked ?? false),
     sub_queries: isDirect ? null : subs,
     color: parseInt(document.getElementById('cfg-color')?.value) || null,
+    tags: splitTags(document.getElementById('cfg-tags')?.value),
   };
 
   const isEdit = !!_editingAgentName;

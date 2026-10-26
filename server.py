@@ -120,6 +120,7 @@ class DispatchRequest(BaseModel):
     repeat_until: Optional[str] = None
     max_runs: Optional[int] = None
     timezone: Optional[str] = None  # IANA zone the cron is written in (the browser's); default: server zone
+    tags: list[str] = []  # the dispatch's own; its agent's tags apply too
 
 
 class DispatchPatch(BaseModel):
@@ -307,6 +308,7 @@ class AgentRequest(BaseModel):
     validate_links: bool = False
     fetch_content: bool = False
     color: Optional[int] = None
+    tags: list[str] = []
 
 
 @app.get("/api/tools")
@@ -344,6 +346,7 @@ async def create_agent_route(request: Request, body: AgentRequest):
     data["sources"] = _json.dumps(data["sources"])
     data["tool_bindings"] = _json.dumps(data["tool_bindings"])
     data["direct_sources"] = _json.dumps(data["direct_sources"])
+    data["tags"] = _json.dumps(db.clean_tags(data["tags"]))
     if data.get("sub_queries") is not None:
         data["sub_queries"] = _json.dumps(data["sub_queries"])
     data["is_builtin"] = 0
@@ -366,6 +369,7 @@ async def update_agent_route(name: str, request: Request, body: AgentRequest):
     data["sources"] = _json.dumps(data["sources"])
     data["tool_bindings"] = _json.dumps(data["tool_bindings"])
     data["direct_sources"] = _json.dumps(data["direct_sources"])
+    data["tags"] = _json.dumps(db.clean_tags(data["tags"]))
     if data.get("sub_queries") is not None:
         data["sub_queries"] = _json.dumps(data["sub_queries"])
     db.update_agent(name, data)
@@ -399,7 +403,7 @@ async def export_agent_route(name: str, request: Request):
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     # Decode JSON fields back to Python objects for clean YAML output
-    for key in ("sources", "tool_bindings", "direct_sources"):
+    for key in ("sources", "tool_bindings", "direct_sources", "tags"):
         if agent.get(key):
             try:
                 agent[key] = _json.loads(agent[key])
@@ -478,7 +482,7 @@ async def create_dispatch_route(request: Request, body: DispatchRequest):
     dispatch_id = db.create_dispatch(
         body.agent, body.prompt, body.schedule, body.label, body.run_on_create,
         trigger_type=body.trigger_type, repeat_until=body.repeat_until, max_runs=body.max_runs,
-        timezone_name=tz,
+        timezone_name=tz, tags=body.tags,
     )
     dispatch = next((d for d in db.get_dispatches() if d["id"] == dispatch_id), None)
     if dispatch:
@@ -508,7 +512,7 @@ async def update_dispatch_route(dispatch_id: int, request: Request, body: Dispat
     db.update_dispatch(
         dispatch_id, body.agent, body.prompt, body.schedule, body.label,
         trigger_type=body.trigger_type, repeat_until=body.repeat_until, max_runs=body.max_runs,
-        timezone_name=tz,
+        timezone_name=tz, tags=body.tags,
     )
     try:
         _scheduler.remove_job(f"dispatch_{dispatch_id}")
