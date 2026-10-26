@@ -3014,6 +3014,7 @@ async function deleteAgentConfig(name) {
 
 // ── Agent Config Sheet ──
 let _editingAgentName = null;
+let _cfgLoadedAgent = null;  // the agent as loaded, for fields the sheet doesn't show (mixed fetch + search)
 
 function closeAgentConfigSheet() {
   document.getElementById('agent-config-sheet').classList.remove('open');
@@ -3030,6 +3031,7 @@ async function openAgentConfigSheet(name) {
   sheet.classList.add('open');
 
   let agent = null;
+  _cfgLoadedAgent = null;
   if (name) {
     try {
       const r = await fetch(`/api/agents/${encodeURIComponent(name)}`, { headers: headers() });
@@ -3040,6 +3042,7 @@ async function openAgentConfigSheet(name) {
     }
   }
 
+  _cfgLoadedAgent = agent;
   const decode = (s, fallback = []) => { try { return JSON.parse(s || '[]'); } catch { return fallback; } };
   const sources = decode(agent?.sources).join('\n');
   const directSources = decode(agent?.direct_sources).join('\n');
@@ -3141,6 +3144,10 @@ async function openAgentConfigSheet(name) {
         <input type="checkbox" id="cfg-validate-fetch" ${agent?.validate_links?'checked':''} style="margin-top:2px">
         <span><span style="font-weight:500">Validate links</span> — Test each link before using it — filters out broken or dead URLs</span>
       </label>
+      <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:13px">
+        <input type="checkbox" id="cfg-also-search" ${isDirectFetch && decode(agent?.tool_bindings).includes('web_search') ? 'checked' : ''} style="margin-top:2px">
+        <span><span style="font-weight:500">Also search the web</span> — plan <input id="cfg-pqc-fetch" type="number" min="1" max="10" value="${esc(agent?.planner_query_count ?? 3)}" style="width:52px;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:2px 6px;color:var(--fg);font-size:12px"> searches next to these URLs (keeps the agent's search domains and freshness)</span>
+      </label>
     </div>
   `;
 
@@ -3217,6 +3224,8 @@ async function saveAgentConfig() {
   if (subs === undefined) return; // JSON parse error
 
   const isDirect = document.getElementById('cfg-type-fetch')?.checked;
+  const alsoSearch = isDirect && document.getElementById('cfg-also-search')?.checked;
+  const loaded = _cfgLoadedAgent || {};
 
   const body = {
     name,
@@ -3224,12 +3233,12 @@ async function saveAgentConfig() {
     description: document.getElementById('cfg-desc').value.trim(),
     goal_template: document.getElementById('cfg-goal').value.trim(),
     output_template: document.getElementById('cfg-output').value.trim(),
-    sources: isDirect ? [] : parseSources(document.getElementById('cfg-sources')?.value ?? ''),
+    sources: alsoSearch ? parseTags(loaded.sources) : isDirect ? [] : parseSources(document.getElementById('cfg-sources')?.value ?? ''),
     direct_sources: isDirect ? parseSources(document.getElementById('cfg-direct')?.value ?? '') : [],
-    tool_bindings: isDirect ? ['web_fetch'] : [],
-    planner_query_count: isDirect ? 4 : parseInt2('cfg-pqc', 5),
-    max_validator_loops: isDirect ? 1 : parseInt2('cfg-mvl', 1),
-    freshness: isDirect ? null : (document.getElementById('cfg-fresh')?.value || null),
+    tool_bindings: alsoSearch ? ['web_fetch', 'web_search'] : isDirect ? ['web_fetch'] : [],
+    planner_query_count: alsoSearch ? parseInt2('cfg-pqc-fetch', 3) : isDirect ? 4 : parseInt2('cfg-pqc', 5),
+    max_validator_loops: alsoSearch ? (loaded.max_validator_loops ?? 1) : isDirect ? 1 : parseInt2('cfg-mvl', 1),
+    freshness: alsoSearch ? (loaded.freshness || null) : isDirect ? null : (document.getElementById('cfg-fresh')?.value || null),
     validate_links: isDirect
       ? (document.getElementById('cfg-validate-fetch')?.checked ?? false)
       : (document.getElementById('cfg-validate')?.checked ?? false),

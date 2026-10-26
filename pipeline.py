@@ -292,12 +292,16 @@ class AgentPipeline:
         print(f"[pipeline] model={MODEL}")
 
         # ── 1. Planner ────────────────────────────────────────────────────────
+        # Direct Fetch skips the planner, unless web_search is bound too: then both (URLs + planned searches).
+        queries: list = []
+        mixed = bool(self.config.direct_sources) and "web_search" in (self.config.tool_bindings or [])
         if self.config.direct_sources:
             today = datetime.now().strftime("%Y-%m-%d")
             queries = [u.replace("{today}", today) for u in self.config.direct_sources]
-            print(f"[pipeline] planner: {len(queries)} direct_sources (skipped planner)")
+            print(f"[pipeline] planner: {len(queries)} direct_sources" + (" + web search" if mixed else " (skipped planner)"))
             self.rec.event("decision", "planner", "planner", sub=self.sub, direct_sources=True, queries=queries)
-        else:
+        if mixed or not self.config.direct_sources:
+            direct = queries
             print(f"[pipeline] planner: generating {self.config.planner_query_count} queries...")
             sources_hint = ""
             if self.config.sources:
@@ -321,6 +325,7 @@ class AgentPipeline:
             print(f"[pipeline] planner: {len(queries)} queries generated")
             self.rec.event("decision", "planner", "planner", sub=self.sub, parsed_ok=parsed is not None,
                            requested=self.config.planner_query_count, queries=queries)
+            queries = direct + queries
 
         if not queries:
             print("[pipeline] planner: no queries generated, skipping research phases")
