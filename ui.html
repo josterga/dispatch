@@ -7,7 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/18.1.0/lib/marked.umd.min.js" integrity="sha384-87deRRK+KapYoxMi3q9+gyE0djQwoovOMWVF206Jg+ORj+Jm68OgNGFcq/dbOvJI" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.4.16/purify.min.js" integrity="sha384-a7SzOxErzJ3ZpQz0zJ32d67dSitNzPcbfybc/ykU9KJhMgZkwqfSxlhhdJRS+XGL" crossorigin="anonymous"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -908,14 +909,22 @@ button.tag-chip.active { color: var(--fg); border-color: var(--accent); backgrou
 <div id="viz-tip" role="tooltip"></div>
 
 <script>
-marked.use({
-  renderer: {
-    link({ href, title, tokens }) {
-      const text = this.parser.parseInline(tokens);
-      return `<a href="${href}" target="_blank" rel="noopener noreferrer"${title ? ` title="${title}"` : ''}>${text}</a>`;
-    }
-  }
-});
+// Digests are model output summarizing untrusted text (Reddit, RSS, web pages), shown on a page that holds the
+// API key: render Markdown only through renderMd(), which sanitizes the HTML before it reaches innerHTML.
+if (window.DOMPurify) {
+  DOMPurify.addHook('afterSanitizeAttributes', node => {
+    if (node.tagName === 'A') { node.setAttribute('target', '_blank'); node.setAttribute('rel', 'noopener noreferrer'); }
+  });
+}
+function renderMd(md) {
+  if (!window.marked || !window.DOMPurify) return `<pre style="white-space:pre-wrap">${esc(md)}</pre>`;  // a library failed to load: plain text
+  return DOMPurify.sanitize(marked.parse(md || ''), {
+    ALLOWED_URI_REGEXP: /^(?:https?:|#)/i,  // links: http(s) only (no javascript:, data:, …)
+    FORBID_TAGS: ['img', 'svg', 'math', 'style', 'form', 'input', 'button', 'textarea', 'select', 'iframe', 'video', 'audio', 'source'],
+    FORBID_ATTR: ['style'],
+    ADD_ATTR: ['target'],
+  });
+}
 
 // API key is entered once per browser and kept in localStorage (never embedded in the page).
 const API_KEY_STORAGE = 'dispatch-api-key';
@@ -1405,7 +1414,7 @@ function renderDigest() {
     } else if (!s.content) {
       body = `<div style="padding:12px 22px;font-size:13px;color:var(--fg-3);font-style:italic">No output recorded.</div>`;
     } else {
-      body = `<div style="padding:16px 22px 22px"><div class="md" style="font-size:14px;line-height:1.6;color:var(--fg-2)">${marked.parse(s.content)}</div></div>`;
+      body = `<div style="padding:16px 22px 22px"><div class="md" style="font-size:14px;line-height:1.6;color:var(--fg-2)">${renderMd(s.content)}</div></div>`;
     }
 
     const sessionOnclick = s ? `openRunDrawer(${s.id})` : `openAgentSheet(${c.id})`;
@@ -1614,7 +1623,7 @@ function renderRunDrawer(s) {
   }
   if (lastResponse) {
     body += `<div class="drawer-section-label mt">Response</div>
-      <div class="md" style="font-size:13px;color:var(--fg-2);line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:14px">${marked.parse(lastResponse.content)}</div>`;
+      <div class="md" style="font-size:13px;color:var(--fg-2);line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:14px">${renderMd(lastResponse.content)}</div>`;
   }
   if (errorMsg) {
     body += `<div class="drawer-section-label mt" style="color:var(--danger)">Error</div>
@@ -1729,7 +1738,7 @@ function renderSessionFull(s) {
   const isRunning = !!jobForSession(s.id);
   let body = '';
   if (s.content) {
-    body += `<div class="md" style="font-size:14px;line-height:1.7;color:var(--fg-2);margin-bottom:24px">${marked.parse(s.content)}</div>`;
+    body += `<div class="md" style="font-size:14px;line-height:1.7;color:var(--fg-2);margin-bottom:24px">${renderMd(s.content)}</div>`;
   }
   if (s.tool_calls?.length) {
     body += s.tool_calls.map(tc => {
