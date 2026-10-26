@@ -245,6 +245,15 @@ body.theme-light .seg-btn.active { background: white; box-shadow: 0 1px 3px oklc
 .tab:hover { color: var(--fg); }
 .tab.active { color: var(--fg); border-bottom-color: var(--accent); }
 .tab .tc { margin-left: 6px; font-family: var(--font-mono); font-size: 11px; color: var(--fg-4); }
+.config-dd { margin-left: auto; }
+.config-dd .new-dropdown-menu { min-width: 180px; }
+.config-dd .new-dropdown-item .tc { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--fg-4); }
+.config-dd .new-dropdown-item:last-child { border-top: 1px solid var(--line-2); }
+.sb-filter { padding: 8px 14px 10px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+.sb-filter select, .mob-filter select { width: 100%; padding: 5px 9px; font-size: 12.5px; }
+.mob-filter { margin-bottom: 8px; }
+.seg { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 3px; gap: 2px; }
+.tbl-bar .seg-btn { padding: 4px 10px; }
 
 /* ── Content ── */
 #content { flex: 1; overflow-y: auto; min-height: 0; }
@@ -733,7 +742,7 @@ button.tag-chip.active { color: var(--fg); border-color: var(--accent); backgrou
       </button>
     </div>
     <div class="sb-runs-hdr" id="sb-runs-hdr"></div>
-    <div class="filter-strip" id="filter-strip"></div>
+    <div class="sb-filter" id="filter-strip"></div>
     <div id="sb-list"></div>
     <div class="sb-footer">
       <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="openAgentSheet(null)">
@@ -753,9 +762,6 @@ button.tag-chip.active { color: var(--fg); border-color: var(--accent); backgrou
       </div>
       <div style="display:flex;align-items:center;gap:6px">
         <button class="run-pill" id="run-pill-m" hidden onclick="openRunPill()"></button>
-        <button class="btn btn-ghost btn-sm" onclick="openSettingsSheet()" title="Settings">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        </button>
         <button class="btn btn-ghost btn-sm" onclick="toggleTheme()" id="theme-btn-mobile" title="Toggle theme"></button>
         <div class="new-dropdown" id="new-dd-mobile">
           <button class="btn btn-sm" onclick="toggleNewMenu('new-dd-mobile',event)">
@@ -779,7 +785,7 @@ button.tag-chip.active { color: var(--fg); border-color: var(--accent); backgrou
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/><polyline points="14 10 16 12 14 14"/></svg>
           </button>
           <div>
-          <h1 class="topbar-title">Agents</h1>
+          <h1 class="topbar-title" id="topbar-title">Digest</h1>
           <div class="topbar-meta" id="topbar-meta"></div>
           </div>
         </div>
@@ -799,18 +805,23 @@ button.tag-chip.active { color: var(--fg); border-color: var(--accent); backgrou
               <button class="new-dropdown-item" onclick="openAgentConfigSheet(null);closeNewMenus()">New agent</button>
             </div>
           </div>
-          <button class="btn btn-ghost btn-sm" onclick="openSettingsSheet()" title="Settings">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          </button>
           <button class="btn btn-ghost btn-sm" onclick="toggleTheme()" id="theme-btn-top" title="Toggle theme"></button>
         </div>
       </div>
       <div class="tabs">
         <button class="tab active" id="tab-digest" onclick="setTab('digest')">Digest<span class="tc" id="tc-digest"></span></button>
-        <button class="tab" id="tab-active" onclick="setTab('active')">Active<span class="tc" id="tc-active"></span></button>
-        <button class="tab" id="tab-archived" onclick="setTab('archived')">Archived<span class="tc" id="tc-archived"></span></button>
         <button class="tab" id="tab-dashboard" onclick="setTab('dashboard')">Dashboard</button>
-        <button class="tab" id="tab-library" onclick="setTab('library')">Library<span class="tc" id="tc-library"></span></button>
+        <div class="new-dropdown config-dd" id="config-dd">
+          <button class="tab" id="tab-config" onclick="toggleNewMenu('config-dd',event)" aria-haspopup="menu">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="9" cy="6" r="2" fill="var(--bg)"/><circle cx="15" cy="12" r="2" fill="var(--bg)"/><circle cx="8" cy="18" r="2" fill="var(--bg)"/></svg><span id="tab-config-lbl">Config</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:4px"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="new-dropdown-menu" role="menu">
+            <button class="new-dropdown-item" onclick="setTab('dispatches');closeNewMenus()">Dispatches<span class="tc" id="tc-dispatches"></span></button>
+            <button class="new-dropdown-item" onclick="setTab('agents');closeNewMenus()">Agents<span class="tc" id="tc-agents"></span></button>
+            <button class="new-dropdown-item" onclick="openSettingsSheet();closeNewMenus()">Settings</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -823,18 +834,18 @@ button.tag-chip.active { color: var(--fg); border-color: var(--accent); backgrou
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l3-9h12l3 9"/><path d="M3 13v6a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-6h-6l-2 2h-4l-2-2H3z"/></svg>
         <span>Digest</span>
       </button>
-      <button class="mob-tab-btn" id="mtab-agents" onclick="setMobileTab('agents')">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="none"><polygon points="13 2 4 14 11 14 10 22 20 10 13 10 13 2" fill="currentColor"/></svg>
-        <span>Agents</span>
+      <button class="mob-tab-btn" id="mtab-dashboard" onclick="setMobileTab('dashboard')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="20" x2="5" y2="12"/><line x1="12" y1="20" x2="12" y2="5"/><line x1="19" y1="20" x2="19" y2="15"/></svg>
+        <span>Dashboard</span>
       </button>
       <button class="mob-tab-btn" id="mtab-runs" onclick="setMobileTab('runs')">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 13 16 15"/></svg>
         <span>Runs</span>
         <i class="run-dot" id="mtab-runs-dot" hidden></i>
       </button>
-      <button class="mob-tab-btn" id="mtab-stats" onclick="setMobileTab('stats')">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="20" x2="5" y2="12"/><line x1="12" y1="20" x2="12" y2="5"/><line x1="19" y1="20" x2="19" y2="15"/></svg>
-        <span>Stats</span>
+      <button class="mob-tab-btn" id="mtab-config" onclick="setMobileTab('config')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="9" cy="6" r="2" fill="var(--panel)"/><circle cx="15" cy="12" r="2" fill="var(--panel)"/><circle cx="8" cy="18" r="2" fill="var(--panel)"/></svg>
+        <span>Config</span>
       </button>
     </nav>
   </main>
@@ -955,8 +966,10 @@ window.fetch = async (...args) => {
 
 // ── State ──
 let sidebarMode = 'runs'; // the sidebar lists runs only
-let dispatchTab = 'digest';      // digest | active | archived | dashboard | library
-let mobileTab = 'digest';    // digest | agents | runs | stats
+let dispatchTab = 'digest';      // digest | dashboard | dispatches | agents (the last two under Config)
+let mobileTab = 'digest';    // digest | dashboard | runs | config
+let dispatchesView = 'active';   // active | archived, on the Dispatches page (desktop and mobile)
+let mobileConfigView = 'dispatches';  // dispatches | agents
 let activeFilter = 'all';
 let isDark = true;
 
@@ -1259,26 +1272,38 @@ function updateThemeBtn() {
 }
 
 // ── Sidebar mode / filter ──
-const FILTERS = ['all','news','local-news','local-infrastructure','local-events','local-theater',
-  'ai','media','sf-social','sf-food','camping','apartment','reddit','craigslist','vendor'];
+// One agent picker for the runs list (sidebar and mobile Runs): agents with runs, grouped by their first tag.
+function runFilterHTML() {
+  const counts = {};
+  allSessions.forEach(s => { if (s.agent) counts[s.agent] = (counts[s.agent] || 0) + 1; });
+  if (activeFilter !== 'all' && !counts[activeFilter]) activeFilter = 'all';
+  const groups = {};
+  Object.keys(counts).forEach(name => {
+    const a = allAgents.find(x => x.name === name);
+    const g = parseTags(a?.tags)[0] || 'other';
+    (groups[g] ||= []).push({ name, label: a?.label || name });
+  });
+  const opt = (v, text) => `<option value="${esc(v)}"${activeFilter === v ? ' selected' : ''}>${esc(text)}</option>`;
+  const groupNames = Object.keys(groups).sort((a, b) => (a === 'other') - (b === 'other') || a.localeCompare(b));
+  return `<select class="input" onchange="setFilter(this.value)" aria-label="Filter runs by agent">
+    ${opt('all', `All agents · ${allSessions.length} runs`)}
+    ${groupNames.map(g => `<optgroup label="${esc(g)}">${groups[g].sort((a, b) => a.label.localeCompare(b.label))
+      .map(a => opt(a.name, `${a.label} · ${counts[a.name]}`)).join('')}</optgroup>`).join('')}
+  </select>`;
+}
+function filteredSessions() {
+  return activeFilter === 'all' ? allSessions : allSessions.filter(s => s.agent === activeFilter);
+}
 
 function initFilterStrip() {
-  const strip = document.getElementById('filter-strip');
-  const agentNames = [...new Set(allSessions.map(s => s.agent).filter(Boolean))];
-  const agents = agentNames.sort().map(name => ({
-    name,
-    label: allAgents.find(a => a.name === name)?.label || name,
-  }));
-  strip.innerHTML = [
-    `<button class="chip${activeFilter === 'all' ? ' active' : ''}" onclick="setFilter('all')">all</button>`,
-    ...agents.map(a => `<button class="chip${activeFilter === a.name ? ' active' : ''}" onclick="setFilter('${a.name}')">${esc(a.label)}</button>`),
-  ].join('');
+  document.getElementById('filter-strip').innerHTML = runFilterHTML();
 }
 
 function setFilter(f) {
   activeFilter = f;
   initFilterStrip();
   renderSidebarList();
+  if (isMobile() && mobileTab === 'runs') renderMobileRuns();
 }
 
 // The sidebar only lists runs (dispatches live on the Active tab); callers use this to bring it into view.
@@ -1303,8 +1328,7 @@ function renderSidebar() {
 
 function renderSidebarList() {
   const list = document.getElementById('sb-list');
-  let items = [...allSessions];
-  if (activeFilter !== 'all') items = items.filter(s => s.agent === activeFilter);
+  const items = filteredSessions();
   if (!items.length) { list.innerHTML = `<div style="padding:24px;text-align:center;color:var(--fg-3);font-size:12px">No runs yet</div>`; return; }
   list.innerHTML = items.map(s => {
     const isActive = runDrawerSessionId === s.id;
@@ -1326,30 +1350,40 @@ function updateTopbar() {
   document.getElementById('topbar-meta').textContent =
     `${active.length} active${nr ? ' · next run ' + nr : ''}`;
   document.getElementById('tc-digest').textContent = digestItems.length || '';
-  document.getElementById('tc-active').textContent = active.length || '';
-  document.getElementById('tc-archived').textContent = archived.length || '';
-  document.getElementById('tc-library').textContent = allAgents.length || '';
+  document.getElementById('tc-dispatches').textContent = active.length || '';
+  document.getElementById('tc-agents').textContent = allAgents.length || '';
 }
 
+const TAB_TITLES = { digest: 'Digest', dashboard: 'Dashboard', dispatches: 'Dispatches', agents: 'Agents' };
 function setTab(tab) {
   dispatchTab = tab;
-  ['digest','active','archived','dashboard','library'].forEach(t => {
+  ['digest','dashboard'].forEach(t => {
     document.getElementById('tab-' + t).classList.toggle('active', t === tab);
   });
+  const inConfig = tab === 'dispatches' || tab === 'agents';
+  document.getElementById('tab-config').classList.toggle('active', inConfig);
+  document.getElementById('tab-config-lbl').textContent = inConfig ? `Config · ${TAB_TITLES[tab]}` : 'Config';
+  document.getElementById('topbar-title').textContent = TAB_TITLES[tab];
+  try { localStorage.setItem('dispatch-tab', tab); } catch {}
   renderContent();
+}
+
+function setDispatchesView(v) {
+  dispatchesView = v;
+  try { localStorage.setItem('dispatch-dispatches-view', v); } catch {}
+  renderDispatch();
 }
 
 // ── Mobile tab ──
 function setMobileTab(tab) {
   mobileTab = tab;
-  ['digest','agents','runs','stats'].forEach(t => {
+  ['digest','dashboard','runs','config'].forEach(t => {
     document.getElementById('mtab-' + t).classList.toggle('active', t === tab);
   });
-  const titles = { digest: 'Digest', agents: 'Agents', runs: 'Runs', stats: 'Stats' };
+  const titles = { digest: 'Digest', dashboard: 'Dashboard', runs: 'Runs', config: 'Config' };
   document.getElementById('mob-title').childNodes[0].textContent = titles[tab];
   const counts = {
     digest: digestItems.length,
-    agents: allDispatches.filter(c => c.enabled).length,
     runs: allSessions.length
   };
   document.getElementById('mob-count').textContent = counts[tab] || '';
@@ -1366,17 +1400,22 @@ function renderDispatch() {
 
 function renderContent() {
   if (dispatchTab === 'digest') renderDigest();
-  else if (dispatchTab === 'active') renderDispatchesTable(allDispatches.filter(c => c.enabled), 'active');
-  else if (dispatchTab === 'archived') renderDispatchesTable(allDispatches.filter(c => !c.enabled), 'archived');
+  else if (dispatchTab === 'dispatches') renderDispatchesTable(allDispatches.filter(c => dispatchesView === 'active' ? c.enabled : !c.enabled), dispatchesView);
   else if (dispatchTab === 'dashboard') renderDashboard();
   else renderAgentLibrary();
 }
 
 function renderMobileContent() {
   if (mobileTab === 'digest') renderDigest();
-  else if (mobileTab === 'agents') renderMobileAgents();
-  else if (mobileTab === 'stats') renderDashboard();
+  else if (mobileTab === 'config') renderMobileConfig();
+  else if (mobileTab === 'dashboard') renderDashboard();
   else renderMobileRuns();
+}
+
+// Active/Archived toggle shared by the desktop table and mobile Config.
+function dispatchesSegHTML() {
+  const n = allDispatches.filter(c => c.enabled).length;
+  return `<div class="seg"><button class="seg-btn${dispatchesView === 'active' ? ' active' : ''}" onclick="setDispatchesView('active')">Active · ${n}</button><button class="seg-btn${dispatchesView === 'archived' ? ' active' : ''}" onclick="setDispatchesView('archived')">Archived · ${allDispatches.length - n}</button></div>`;
 }
 
 // ── Digest ──
@@ -1465,27 +1504,26 @@ function digestToggleCard(id, event) {
 // ── Agents Table ── (see renderDispatchesTable below)
 
 // ── Mobile content ──
-function renderMobileAgents() {
-  const active = allDispatches.filter(c => c.enabled);
-  const archived = allDispatches.filter(c => !c.enabled);
+function setMobileConfigView(v) {
+  mobileConfigView = v;
+  renderMobileConfig();
+}
 
+function renderMobileConfig() {
   const el = document.getElementById('content');
-  const clockIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 13 16 15"/></svg>`;
-  const playIcon = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="none"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor"/></svg>`;
-  const editIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16v4z"/><line x1="14" y1="6" x2="18" y2="10"/></svg>`;
   const calendarIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 13 16 15"/></svg>`;
+  const editIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16v4z"/><line x1="14" y1="6" x2="18" y2="10"/></svg>`;
+  const v = mobileConfigView;
 
-  let mAgentsView = el.dataset.agentView || 'active';
-
-  const seg = `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:3px;gap:2px;margin-bottom:12px">
-    <button class="seg-btn${mAgentsView==='active'?' active':''}" onclick="this.closest('#content').dataset.agentView='active';renderMobileAgents()">Active · ${active.length}</button>
-    <button class="seg-btn${mAgentsView==='archived'?' active':''}" onclick="this.closest('#content').dataset.agentView='archived';renderMobileAgents()">Archived · ${archived.length}</button>
-    <button class="seg-btn${mAgentsView==='library'?' active':''}" onclick="this.closest('#content').dataset.agentView='library';renderMobileAgents()">Library · ${allAgents.length}</button>
+  const top = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+    <div class="seg" style="flex:1">
+      <button class="seg-btn${v === 'dispatches' ? ' active' : ''}" onclick="setMobileConfigView('dispatches')">Dispatches · ${allDispatches.filter(c => c.enabled).length}</button>
+      <button class="seg-btn${v === 'agents' ? ' active' : ''}" onclick="setMobileConfigView('agents')">Agents · ${allAgents.length}</button>
+    </div>
+    <button class="btn btn-sm" onclick="openSettingsSheet()">Settings</button>
   </div>`;
 
-  el.dataset.agentView = mAgentsView;
-
-  if (mAgentsView === 'library') {
+  if (v === 'agents') {
     const agentCards = allAgents.map(a => {
       const desc = (a.description || '').slice(0, 100);
       return `<div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;color:var(--fg)">
@@ -1493,7 +1531,8 @@ function renderMobileAgents() {
           ${pillHTML(a.name)}
           ${a.label ? `<span style="font-size:13px;color:var(--fg-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.label)}</span>` : ''}
         </div>
-        ${desc ? `<div style="font-size:13px;color:var(--fg-3);line-height:1.4;margin-bottom:10px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${esc(desc)}</div>` : ''}
+        ${desc ? `<div style="font-size:13px;color:var(--fg-3);line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${esc(desc)}</div>` : ''}
+        <div style="margin-bottom:10px">${tagChipsHTML(parseTags(a.tags))}</div>
         <div style="display:flex;gap:4px;border-top:1px solid var(--line);padding-top:10px">
           <button class="btn btn-sm" onclick="openAgentSheet({agent:'${esc(a.name)}'});event.stopPropagation()">${calendarIcon} Schedule</button>
           <button class="btn btn-sm" style="margin-left:auto" onclick="openAgentConfigSheet('${esc(a.name)}');event.stopPropagation()">${editIcon} Edit</button>
@@ -1501,16 +1540,39 @@ function renderMobileAgents() {
       </div>`;
     }).join('');
     el.innerHTML = `<div style="padding:10px 14px 24px">
-      ${seg}
-      <div style="display:flex;flex-direction:column;gap:8px">${agentCards || '<div style="text-align:center;padding:40px;color:var(--fg-3);font-size:13px">No agents in library</div>'}</div>
+      ${top}
+      <div style="display:flex;flex-direction:column;gap:8px">${agentCards || '<div style="text-align:center;padding:40px;color:var(--fg-3);font-size:13px">No agents yet</div>'}</div>
     </div>`;
     return;
   }
 
-  const shown = mAgentsView === 'active' ? active : archived;
-  const cards = shown.map(c => {
-    const label = dispatchLabel(c, 50);
-    const footer = mAgentsView === 'active'
+  const shown = allDispatches.filter(c => dispatchesView === 'active' ? c.enabled : !c.enabled);
+  const tags = [...new Set(shown.flatMap(dispatchTags))].sort();
+  if (activeTag && !tags.includes(activeTag)) activeTag = null;
+  el.innerHTML = `<div style="padding:10px 14px 24px">
+    ${top}
+    <div style="margin-bottom:8px">${dispatchesSegHTML().replace('class="seg"', 'class="seg" style="width:100%"')}</div>
+    <div class="mob-filter"><input class="input" style="width:100%;padding:6px 9px;font-size:13px" placeholder="Filter by name, agent, prompt or tag" value="${esc(activeQuery)}" oninput="filterActive(this.value)" aria-label="Filter dispatches"></div>
+    ${tags.length ? `<div class="tag-row" style="margin-bottom:10px">${tags.map(t => `<button class="tag-chip${t === activeTag ? ' active' : ''}" onclick="filterActiveTag('${esc(t).replace(/'/g, "\\'")}')">${esc(t)}</button>`).join('')}</div>` : ''}
+    <div id="m-dispatch-cards" style="display:flex;flex-direction:column;gap:8px"></div>
+  </div>`;
+  renderMobileDispatchCards();
+}
+
+function renderMobileDispatchCards() {
+  const box = document.getElementById('m-dispatch-cards');
+  if (!box) return;
+  const clockIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 13 16 15"/></svg>`;
+  const playIcon = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="none"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor"/></svg>`;
+  const editIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16v4z"/><line x1="14" y1="6" x2="18" y2="10"/></svg>`;
+  const isActive = dispatchesView === 'active';
+  const q = activeQuery.trim().toLowerCase();
+  const shown = allDispatches.filter(c => (isActive ? c.enabled : !c.enabled)
+    && (!activeTag || dispatchTags(c).includes(activeTag))
+    && (!q || [dispatchLabel(c, 80), c.agent, c.prompt, allAgents.find(a => a.name === c.agent)?.label, ...dispatchTags(c)]
+      .some(t => (t || '').toLowerCase().includes(q))));
+  box.innerHTML = shown.map(c => {
+    const footer = isActive
       ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line);display:flex;align-items:center;gap:6px">
            <span style="color:var(--fg-3);flex-shrink:0">${clockIcon}</span>
            <span style="font-size:12px;color:var(--fg-2)">${esc(humanizeCron(c.schedule, c.timezone))}</span>
@@ -1529,16 +1591,12 @@ function renderMobileAgents() {
         ${pillHTML(c.agent)}
         <span class="meta-mono" style="margin-left:auto;font-size:10.5px;color:var(--fg-3)">${runsCountHTML(c)}</span>
       </div>
-      <div style="font-size:14.5px;font-weight:600;line-height:1.3;margin-bottom:4px">${esc(label)}</div>
+      <div style="font-size:14.5px;font-weight:600;line-height:1.3;margin-bottom:4px">${esc(dispatchLabel(c, 50))}</div>
       <div style="font-size:13px;color:var(--fg-3);line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${esc(c.prompt)}</div>
+      ${tagChipsHTML(dispatchTags(c))}
       ${footer}
     </div>`;
-  }).join('');
-
-  el.innerHTML = `<div style="padding:10px 14px 24px">
-    ${seg}
-    <div style="display:flex;flex-direction:column;gap:8px">${cards || '<div style="text-align:center;padding:40px;color:var(--fg-3);font-size:13px">No agents</div>'}</div>
-  </div>`;
+  }).join('') || `<div style="text-align:center;padding:40px;color:var(--fg-3);font-size:13px">${q || activeTag ? 'No matches' : isActive ? 'No active dispatches' : 'No archived dispatches'}</div>`;
 }
 
 function renderMobileRuns() {
@@ -1547,7 +1605,7 @@ function renderMobileRuns() {
     el.innerHTML = `<div class="empty-state">No runs yet.</div>`;
     return;
   }
-  const cards = allSessions.map(s => `
+  const cards = filteredSessions().map(s => `
     <button style="background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;text-align:left;cursor:pointer;color:var(--fg);display:block;width:100%" onclick="openRunDrawer(${s.id})">
       <div style="display:flex;align-items:center;gap:6px">
         ${pillHTML(s.agent)}
@@ -1557,7 +1615,7 @@ function renderMobileRuns() {
       <div style="margin-top:6px;font-size:13.5px;color:var(--fg);line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.prompt || '—')}</div>
       ${!jobForSession(s.id) && s.run_status ? `<div style="margin-top:6px">${metricsChipHTML(s.run_status, s.run_sources, s.run_ms, { backfill: s.metrics_source === 'backfill', degraded: !!s.run_degraded, checks: s.run_checks })}</div>` : ''}
     </button>`).join('');
-  el.innerHTML = `<div style="padding:10px 14px 24px;display:flex;flex-direction:column;gap:6px">${cards}</div>`;
+  el.innerHTML = `<div style="padding:10px 14px 24px;display:flex;flex-direction:column;gap:6px"><div class="mob-filter">${runFilterHTML()}</div>${cards}</div>`;
 }
 
 // ── Run Drawer ──
@@ -2252,7 +2310,7 @@ async function renderDashboard() {
   const el = document.getElementById('content');
   if (!statsCache[dashDays]) el.innerHTML = `<div class="empty-state">Loading…</div>`;
   const st = await loadStats(dashDays);
-  if (!(isMobile() ? mobileTab === 'stats' : dispatchTab === 'dashboard')) return;
+  if (!(isMobile() ? mobileTab === 'dashboard' : dispatchTab === 'dashboard')) return;
   if (!st) { el.innerHTML = `<div class="empty-state">Could not load stats.</div>`; return; }
   dashData = st;
   const runs = st.runs.filter(r => r.status);
@@ -2391,11 +2449,12 @@ function sortActive(key) {
 }
 function filterActive(q) {
   activeQuery = q;
-  renderActiveRows();
+  if (isMobile()) renderMobileDispatchCards();
+  else renderActiveRows();
 }
 function filterActiveTag(t) {
   activeTag = activeTag === t ? null : t;
-  renderContent();
+  renderDispatch();
 }
 
 let activeRowsData = [];
@@ -2403,19 +2462,20 @@ let activeKind = 'active';
 function renderDispatchesTable(dispatches, kind) {
   const el = document.getElementById('content');
   if (!dispatches.length) {
-    el.innerHTML = `<div class="empty-state">${kind === 'active' ? 'No active agents.' : 'No archived agents.'}</div>`;
+    el.innerHTML = `<div style="padding:16px 24px 80px"><div class="tbl-bar">${dispatchesSegHTML()}</div>
+      <div class="empty-state">${kind === 'active' ? 'No active dispatches.' : 'No archived dispatches.'}</div></div>`;
     return;
   }
   const st = statsCache[30]?.data;
   if (!statsCache[30] || Date.now() - statsCache[30].at > 60000) {
-    loadStats(30).then(d => { if (d && d !== st && !isMobile() && dispatchTab === kind) renderContent(); });
+    loadStats(30).then(d => { if (d && d !== st && !isMobile() && dispatchTab === 'dispatches') renderContent(); });
   }
   const runs = st?.runs || [];
   activeKind = kind;
   activeRowsData = dispatches.map(c => ({ c, st: dispatchRunStats(c.id, runs), next: kind === 'active' ? nextRun(c.schedule, null, c.timezone) : null }));
   const th = (key, label, cls) => `<th class="sort${cls ? ' ' + cls : ''}" onclick="sortActive('${key}')" aria-sort="${activeSort.key === key ? (activeSort.dir > 0 ? 'ascending' : 'descending') : 'none'}">${label}<span class="arr">${activeSort.key === key ? (activeSort.dir > 0 ? '▲' : '▼') : ''}</span></th>`;
   el.innerHTML = `<div style="padding:16px 24px 80px">
-    <div class="tbl-bar"><input class="input" placeholder="Filter by name, agent, prompt or tag" value="${esc(activeQuery)}" oninput="filterActive(this.value)" aria-label="Filter dispatches"><span class="meta" id="tbl-count"></span>
+    <div class="tbl-bar">${dispatchesSegHTML()}<input class="input" placeholder="Filter by name, agent, prompt or tag" value="${esc(activeQuery)}" oninput="filterActive(this.value)" aria-label="Filter dispatches"><span class="meta" id="tbl-count"></span>
       <span class="meta" style="margin-left:auto">Success and average over 30 days</span></div>
     ${(() => { const tags = [...new Set(dispatches.flatMap(dispatchTags))].sort(); if (activeTag && !tags.includes(activeTag)) activeTag = null;
       return tags.length ? `<div class="tag-row" style="margin-bottom:10px">${tags.map(t => `<button class="tag-chip${t === activeTag ? ' active' : ''}" onclick="filterActiveTag('${esc(t).replace(/'/g, "\\'")}')">${esc(t)}</button>`).join('')}</div>` : ''; })()}
@@ -2884,7 +2944,7 @@ async function refreshOpenRun() {
 async function jobsFinished(jobs) {
   invalidateStats();
   await Promise.all([loadSessions(), loadDigest(), loadDispatches()]);
-  if (['digest', 'dashboard', 'active'].includes(dispatchTab) || ['digest', 'stats'].includes(mobileTab)) renderDispatch();
+  if (['digest', 'dashboard', 'dispatches'].includes(dispatchTab) || ['digest', 'dashboard'].includes(mobileTab)) renderDispatch();
   if (jobs.some(j => j.session_id === runDrawerSessionId)) refreshedFinishedSession = null;
   if (jobs.length > 1) {
     setStatus(`${jobs.length} runs finished`, { label: 'View', fn: () => isMobile() ? setMobileTab('runs') : setSidebarMode('runs') });
@@ -2954,9 +3014,10 @@ function renderAgentLibrary() {
       ? `<span style="width:7px;height:7px;border-radius:50%;background:var(--success,#22c55e);display:inline-block"></span>`
       : `<span style="width:7px;height:7px;border-radius:50%;background:var(--fg-4);display:inline-block"></span>`;
     return `<tr onclick="${canEdit ? `openAgentConfigSheet('${esc(a.name)}')` : ''}">
-      <td>${enabledDot} <span style="font-weight:500;font-family:var(--font-mono);font-size:12px">${esc(a.name)}</span></td>
+      <td style="white-space:nowrap">${enabledDot} <span style="font-weight:500;font-family:var(--font-mono);font-size:12px">${esc(a.name)}</span></td>
       <td>${esc(a.label || '')}</td>
       <td style="color:var(--fg-3);font-size:12px">${esc((a.description || '').slice(0, 60))}</td>
+      <td>${parseTags(a.tags).map(t => `<span class="tag-chip">${esc(t)}</span>`).join(' ')}</td>
       <td style="text-align:right"><span class="meta-mono">${sources.length}</span></td>
       <td style="text-align:right"><span class="meta-mono">${subs.length || '—'}</span></td>
       <td><div style="display:inline-flex;gap:4px" onclick="event.stopPropagation()">${actions}</div></td>
@@ -2975,7 +3036,7 @@ function renderAgentLibrary() {
     <div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden">
       <table class="agents-table">
         <thead><tr style="background:var(--panel-2)">
-          <th>Name</th><th>Label</th><th>Description</th>
+          <th>Name</th><th>Label</th><th>Description</th><th>Tags</th>
           <th style="text-align:right">Sources</th><th style="text-align:right">Tracks</th><th style="text-align:right">Actions</th>
         </tr></thead>
         <tbody>${rows}</tbody>
@@ -3434,8 +3495,15 @@ document.addEventListener('keydown', e => {
   updateThemeBtn();
   try { if (localStorage.getItem('dispatch-sidebar-collapsed') === '1') document.getElementById('app').classList.add('sb-collapsed'); } catch {}
 
+  try {
+    const v = localStorage.getItem('dispatch-dispatches-view');
+    if (v === 'active' || v === 'archived') dispatchesView = v;
+  } catch {}
   refreshAll().then(() => {
-    if (window.innerWidth <= 640) setMobileTab('digest');
+    if (window.innerWidth <= 640) { setMobileTab('digest'); return; }
+    let tab = 'digest';
+    try { tab = localStorage.getItem('dispatch-tab') || 'digest'; } catch {}
+    setTab(TAB_TITLES[tab] ? tab : 'digest');
   });
 
   refreshTimer = setInterval(() => { loadSessions(); loadDispatches(); loadDigest(); }, 30000);
