@@ -222,11 +222,10 @@ Web search fans out across multiple providers in parallel, merges and deduplicat
 |---|---|---|---|
 | **Ollama Cloud** | `OLLAMA_API_KEY` | [ollama.com](https://ollama.com) | Recommended; primary fan-out provider |
 | **Brave Search** | `BRAVE_API_KEY` | 2K queries/month — [brave.com/search/api](https://brave.com/search/api/) | Good general coverage |
-| **Jina Search** | `JINA_API_KEY` | [jina.ai](https://jina.ai/) | Also enables Jina Reader for page fetching; `site:` queries excluded |
 | **SearXNG** | `SEARXNG_URL` | self-hosted, no quota | Your own instance (e.g. `http://127.0.0.1:8888`) with JSON format enabled; results ranked first |
 | **DuckDuckGo** | none | fallback | Used only when every other provider returns nothing (scraping is often throttled) |
 
-Page fetching uses `requests` with automatic fallback to **Jina Reader** (`r.jina.ai`) when a page returns thin content — catches JavaScript-rendered shells transparently. Set `WEB_FETCH_PROVIDER=jina` to always use Jina.
+Page fetching is local: `requests` plus main-content extraction with [trafilatura](https://trafilatura.readthedocs.io/) (regex tag strip as a fallback). No JavaScript rendering, and no cloud reader: thin pages (likely JS shells) are returned as-is and flagged `thin` in the run metrics.
 
 ## Environment variables
 
@@ -266,7 +265,6 @@ Open the gear icon in the web UI to change these at any time. A server restart i
 | Variable | Default | Description |
 |---|---|---|
 | `OLLAMA_API_KEY` | — | Ollama Cloud search key — [ollama.com](https://ollama.com) |
-| `WEB_FETCH_PROVIDER` | `http` | `http` (raw fetch + Jina fallback) or `jina` (always use Jina Reader) |
 | `DISPATCH_DB_PATH` | `search_history.db` | SQLite path |
 | `KEEP_ALIVE` | `0` | How long Ollama keeps the model loaded after each call: `0` unload, `-1` forever, `30m`, or `server` to use the Ollama server's `OLLAMA_KEEP_ALIVE` |
 | `DISPATCH_AGENTS_DIR` | `./agents` | YAML seed files directory |

@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
 import requests
+import trafilatura
 from dotenv import load_dotenv
 from ddgs import DDGS
 
@@ -13,7 +14,6 @@ import db
 load_dotenv(override=True)
 
 SEARCH_RESULTS_PER_PROVIDER = int(os.getenv("OLLAMA_SEARCH_RESULTS_PER_PROVIDER", "5"))
-WEB_FETCH_PROVIDER = os.getenv("WEB_FETCH_PROVIDER", "http")  # "http" or "jina"
 
 TOOLS = [
     {
@@ -181,7 +181,6 @@ def call_web_search(query: str, freshness: Optional[str] = None) -> dict:
         futures = {
             "searxng": pool.submit(_timed, _searxng_search, query, freshness),
             "brave": pool.submit(_timed, _brave_search, query, freshness),
-            "jina":  pool.submit(_timed, _jina_search, query, freshness),
         }
         if ollama_ready:
             futures["ollama"] = pool.submit(_timed, _ollama_search, query)
@@ -193,7 +192,7 @@ def call_web_search(query: str, freshness: Optional[str] = None) -> dict:
     if not answered:
         answers["ddg"] = _timed(_ddg_search, query, freshness)
 
-    order = ("searxng", "ollama", "brave", "jina", "ddg")
+    order = ("searxng", "ollama", "brave", "ddg")
     meta_providers: dict[str, dict] = {}
     for name in order:
         if name not in answers:
@@ -243,72 +242,11 @@ def call_web_search(query: str, freshness: Optional[str] = None) -> dict:
     return {"results": merged, **({"source_errors": source_errors} if source_errors else {}), "meta": meta}
 
 
-JINA_FALLBACK_THRESHOLD = 3000  # chars — below this, assume thin/boilerplate content and try Jina
-
-
-def _jina_fetch(url: str, meta: Optional[dict] = None) -> dict:
-    jina_url = f"https://r.jina.ai/{url}"
-    print(f"[web_fetch]  Jina: {jina_url}")
-    t0 = time.monotonic()
-    jm: dict = {}
-    if meta is not None:
-        meta["jina"] = jm
-    try:
-        jina_key = os.getenv("JINA_API_KEY", "")
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; local-web-search/1.0)", "Accept": "text/plain"}
-        if jina_key:
-            headers["Authorization"] = f"Bearer {jina_key}"
-        r = requests.get(
-            jina_url,
-            headers=headers,
-            timeout=20,
-            allow_redirects=True,
-        )
-        jm["status"] = r.status_code
-        r.raise_for_status()
-        text = r.text.strip()
-        jm["chars"] = len(text)
-        print(f"[web_fetch]  Jina content: {len(text)} chars")
-        return {"content": text}
-    except Exception as e:
-        jm["error"] = str(e)[:300]
-        print(f"[web_fetch]  Jina ERROR: {e}")
-        return {"error": str(e)}
-    finally:
-        jm["ms"] = int((time.monotonic() - t0) * 1000)
-
-
-def _jina_search(query: str, freshness: Optional[str] = None) -> tuple[Optional[list], Optional[str]]:
-    jina_key = os.getenv("JINA_API_KEY", "")
-    if not jina_key or "site:" in query:
-        return None, None
-    try:
-        import urllib.parse
-        url = f"https://s.jina.ai/{urllib.parse.quote_plus(query)}"
-        r = requests.get(
-            url,
-            headers={"Authorization": f"Bearer {jina_key}", "Accept": "application/json"},
-            timeout=15,
-        )
-        r.raise_for_status()
-        hits = r.json().get("data", [])
-        results = [
-            {
-                "title": h.get("title", ""),
-                "url": h.get("url", ""),
-                "content": h.get("description", "") or h.get("content", ""),
-            }
-            for h in hits
-        ][:SEARCH_RESULTS_PER_PROVIDER]
-        print(f"[jina_search] {len(results)} results")
-        return results, None
-    except Exception as e:
-        print(f"[jina_search] ERROR: {e}")
-        return None, str(e)
+THIN_CONTENT_CHARS = 3000  # below this the page is likely a JS shell or boilerplate (flagged in metrics)
 
 
 def _is_local_url(url: str) -> bool:
-    """localhost / private / link-local hosts: never hand these to Jina (external, can't reach them anyway)."""
+    """localhost / private / link-local hosts (e.g. the intel inbox): recorded in fetch metrics."""
     import ipaddress
     from urllib.parse import urlparse
     host = (urlparse(url).hostname or "").lower()
@@ -322,7 +260,7 @@ def _is_local_url(url: str) -> bool:
 
 
 def call_web_fetch(url: str) -> dict:
-    """Fetch a page as text. The result's "meta" (HTTP status, sizes, timings, Jina fallback) is for
+    """Fetch a page as text, locally (no cloud reader). The result's "meta" (HTTP status, sizes, timings) is for
     run metrics only: callers pop it before handing the content to a model."""
     print(f"[web_fetch]  Fetching: {url}")
     t0 = time.monotonic()
@@ -336,10 +274,23 @@ def call_web_fetch(url: str) -> dict:
     return result
 
 
+def _html_text(html: str, url: str, meta: dict) -> str:
+    """Main content via trafilatura (drops nav/footer boilerplate); regex tag strip if it finds nothing."""
+    try:
+        text = trafilatura.extract(html, url=url, favor_recall=True, include_comments=False) or ""
+    except Exception as e:
+        print(f"[web_fetch]  trafilatura ERROR: {e}")
+        text = ""
+    if text.strip():
+        meta["extract"] = "trafilatura"
+        return text.strip()
+    meta["extract"] = "regex"
+    text = re.sub(r"<(script|style)[^>]*>.*?</(script|style)>", " ", html, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def _fetch(url: str, local: bool, meta: dict) -> dict:
-    if WEB_FETCH_PROVIDER == "jina" and not local:
-        meta["via"] = "jina"
-        return _jina_fetch(url, meta)
     meta["via"] = "http"
     try:
         t0 = time.monotonic()
@@ -361,14 +312,10 @@ def _fetch(url: str, local: bool, meta: dict) -> dict:
             # Keep line structure (e.g. the local intel inbox's item blocks).
             text = r.text.strip()
         else:
-            text = re.sub(r"<(script|style)[^>]*>.*?</(script|style)>", " ", r.text, flags=re.DOTALL | re.IGNORECASE)
-            text = re.sub(r"<[^>]+>", " ", text)
-            text = re.sub(r"\s+", " ", text).strip()
+            text = _html_text(r.text, url, meta)
         print(f"[web_fetch]  content: {len(text)} chars, snippet: {text[:200]!r}")
-        if len(text) < JINA_FALLBACK_THRESHOLD and not local:
-            meta["http_chars"] = len(text)
-            meta["via"] = "jina_fallback"
-            return _jina_fetch(url, meta)
+        if len(text) < THIN_CONTENT_CHARS and not local:
+            meta["thin"] = True
         return {"content": text}
     except requests.exceptions.HTTPError as e:
         print(f"[web_fetch] ERROR: {e}")

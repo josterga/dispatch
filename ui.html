@@ -2418,7 +2418,7 @@ function renderStatsPanel(s, events) {
       const d = e.data;
       const via = d.via === 'jina_fallback' ? `jina (http gave ${fmtCompact(d.http_chars)})` : (d.via || '');
       const extra = d.inbox ? `${d.inbox.items} items${d.inbox.backlog ? `, ${d.inbox.backlog} queued` : ''}` : '';
-      return `<tr data-tip="${esc(`${e.name}\n${[d.status && `HTTP ${d.status}`, d.ctype, d.bytes != null && fmtBytes(d.bytes), via && `via ${via}`, d.final_url && `→ ${d.final_url}`, d.truncated && `kept ${fmtCompact(d.kept_chars)} of ${fmtCompact(d.chars)} chars`, e.error].filter(Boolean).join('\n')}`)}">
+      return `<tr data-tip="${esc(`${e.name}\n${[d.status && `HTTP ${d.status}`, d.ctype, d.bytes != null && fmtBytes(d.bytes), via && `via ${via}`, d.extract && `text: ${d.extract}`, d.thin && 'thin page (likely JS-rendered)', d.final_url && `→ ${d.final_url}`, d.truncated && `kept ${fmtCompact(d.kept_chars)} of ${fmtCompact(d.chars)} chars`, e.error].filter(Boolean).join('\n')}`)}">
         <td class="url">${esc(shortUrl(e.name))}</td><td>${esc(d.source || '')}</td>
         <td class="r${e.ok ? '' : ' err'}">${e.ok ? (d.status || 'ok') : esc(truncate(String(d.status || e.error || 'failed'), 18))}</td>
         <td class="r">${fmtCompact(d.chars)}${d.truncated ? ' ✂' : ''}</td><td class="r">${fmtMs(d.ms ?? e.duration_ms)}</td><td>${esc(extra)}</td></tr>`;
@@ -3698,7 +3698,6 @@ async function loadSettings() {
         <div style="display:flex;flex-direction:column;gap:12px">
           ${f('s-ollama-search', 'Ollama Cloud API key', inp('s-ollama-search', val('OLLAMA_API_KEY'), 'password'))}
           ${f('s-brave', 'Brave Search API key', inp('s-brave', val('BRAVE_API_KEY'), 'password'))}
-          ${f('s-jina', 'Jina API key', inp('s-jina', val('JINA_API_KEY'), 'password'))}
           ${f('s-searxng', 'SearXNG URL', inp('s-searxng', val('SEARXNG_URL'), 'text'))}
         </div>
       </div>
@@ -3754,7 +3753,6 @@ async function saveSettings() {
     OLLAMA_BASE_URL: document.getElementById('s-baseurl')?.value?.trim() ?? '',
     OLLAMA_API_KEY: document.getElementById('s-ollama-search')?.value?.trim() ?? '',
     BRAVE_API_KEY: document.getElementById('s-brave')?.value?.trim() ?? '',
-    JINA_API_KEY: document.getElementById('s-jina')?.value?.trim() ?? '',
     SEARXNG_URL: document.getElementById('s-searxng')?.value?.trim() ?? '',
     LOCATION: document.getElementById('s-location')?.value?.trim() ?? '',
     USER_PROFILE: (document.getElementById('s-profile')?.value ?? '').replace(/\s+/g, ' ').trim(),

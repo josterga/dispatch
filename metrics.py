@@ -78,12 +78,12 @@ def env_knobs() -> dict:
     keys = [
         "PROVIDER", "MODEL", "FAST_MODEL", "CONTEXT_BUDGET", "NUM_CTX", "SYNTHESIZER_CTX",
         "SYNTHESIZER_MAX_TOKENS", "SYNTHESIZER_MAX_CHARS", "TEMPERATURE", "TIMEOUT", "KEEP_ALIVE",
-        "MAX_ITERATIONS", "PLANNER_QUERY_COUNT", "PARALLEL_SUB_PIPELINES", "WEB_FETCH_PROVIDER",
+        "MAX_ITERATIONS", "PLANNER_QUERY_COUNT", "PARALLEL_SUB_PIPELINES",
         "OLLAMA_SEARCH_RESULTS_PER_PROVIDER",
     ]
     out = {k: os.environ[k] for k in keys if k in os.environ}
     # Which search providers are configured (never the keys themselves).
-    out["search_providers"] = [p for p, k in (("searxng", "SEARXNG_URL"), ("ollama", "OLLAMA_API_KEY"), ("brave", "BRAVE_API_KEY"), ("jina", "JINA_API_KEY")) if os.getenv(k)]
+    out["search_providers"] = [p for p, k in (("searxng", "SEARXNG_URL"), ("ollama", "OLLAMA_API_KEY"), ("brave", "BRAVE_API_KEY")) if os.getenv(k)]
     return out
 
 
@@ -717,7 +717,7 @@ _RE_PHASE_MS = re.compile(r"^\[pipeline\] (planner|validator|synthesizer): (\d+)
 _RE_SYNTH_IN = re.compile(r"^\[pipeline\] synthesizer: input=(\d+) chars")
 _RE_QUERIES = re.compile(r"^\[pipeline\] planner: (\d+) (?:queries generated|direct_sources)")
 _RE_MERGED = re.compile(r"^\[web_search\] (\d+) merged results \((.*)\)")
-_RE_PROV_ERR = re.compile(r"^\[(searxng|ollama|brave|jina|ddg)_search\] ERROR")
+_RE_PROV_ERR = re.compile(r"^\[(searxng|ollama|brave|ddg)_search\] ERROR")
 _RE_FETCH = re.compile(r"^\[web_fetch\]\s+content: (\d+) chars, snippet: (.*)$")
 _RE_FETCH_ERR = re.compile(r"^\[web_fetch\]\s+(?:Jina )?ERROR")
 _RE_INBOX = re.compile(r"(\d+) new items")
