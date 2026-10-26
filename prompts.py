@@ -96,6 +96,26 @@ Output format:
 {output_template}"""
 
 
+# Appended to the synthesizer/aggregator system prompt when the dispatch has earlier digests (previous-run awareness).
+PROMPT_PREVIOUS = """
+
+PREVIOUS DIGESTS of this same dispatch (most recent first) — what the reader has already seen:
+{previous}
+
+How to use them:
+- Research items marked "previously_reported" were already covered. Include such an item again only if the research shows something new about it; then start the line with **Update:** and say what changed.
+- Start genuinely new items with **New:**.
+- If an earlier digest had action items or urgent items, say whether the research shows them resolved, still open, or nothing new.
+- If a section has nothing new since the previous digest, write one line saying so instead of repeating old items.
+- Never cite a URL only because it appears in the previous digests: cite only URLs present in the research."""
+
+# Added to the planner prompt when the dispatch has an earlier digest.
+PROMPT_PLANNER_PREVIOUS = """
+
+Already covered in the previous digest ({when}): {headings}
+Prefer queries that find what is new since then, or follow up on developing stories, over repeating the same coverage."""
+
+
 _FRESHNESS_LABELS = {
     "d": "the last 24 hours",
     "w": "the last 7 days",

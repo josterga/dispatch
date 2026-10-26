@@ -143,6 +143,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
     for col, typedef in [
         ("color", "INTEGER"),
         ("tags", "TEXT"),  # JSON list of lowercase tags
+        ("recall_runs", "INTEGER"),  # previous digests shown to the synthesizer; NULL = default (2), 0 = off
     ]:
         try:
             conn.execute(f"ALTER TABLE agents ADD COLUMN {col} {typedef}")
@@ -491,6 +492,74 @@ def get_latest_session_for_dispatch(dispatch_id: int, include_missed: bool = Fal
     return s
 
 
+# Runs whose output counts as a digest: done (or pre-metrics runs with no status), never missed/error/empty/cancelled.
+_DONE_RUN = "COALESCE(json_extract(s.metrics, '$.status'), 'done') = 'done'"
+
+
+def recent_outputs(dispatch_id: int, n: int, before_session: Optional[int] = None) -> list[dict]:
+    """The last n done runs of a dispatch, newest first: {id, started_at, content}. `before_session` skips that run and later ones."""
+    conn = _get_conn()
+    before = "AND s.id < ?" if before_session else ""
+    params = (dispatch_id, before_session, n) if before_session else (dispatch_id, n)
+    rows = conn.execute(
+        f"""SELECT * FROM (
+                SELECT s.id, s.started_at,
+                       (SELECT content FROM messages WHERE session_id = s.id AND role = 'assistant' ORDER BY id DESC LIMIT 1) AS content
+                FROM sessions s
+                WHERE s.dispatch_id = ? AND {_DONE_RUN} {before})
+            WHERE content IS NOT NULL AND content != ''
+            ORDER BY started_at DESC, id DESC LIMIT ?""",
+        params,
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def session_dispatch_id(session_id: int) -> Optional[int]:
+    row = _get_conn().execute("SELECT dispatch_id FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    return row["dispatch_id"] if row else None
+
+
+def get_output(session_id: int) -> Optional[str]:
+    """A run's final output (its last assistant message)."""
+    row = _get_conn().execute(
+        "SELECT content FROM messages WHERE session_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 1", (session_id,)
+    ).fetchone()
+    return row["content"] if row else None
+
+
+def get_phase_payloads(session_id: int, phases: tuple[str, ...]) -> list[dict]:
+    """LLM payloads (input JSON, output) of a run's calls in the given phases, in call order."""
+    conn = _get_conn()
+    marks = ",".join("?" for _ in phases)
+    rows = conn.execute(
+        f"""SELECT e.phase, e.sub, p.input, p.output FROM run_events e
+            JOIN run_payloads p ON p.session_id = e.session_id AND p.seq = e.seq
+            WHERE e.session_id = ? AND e.kind = 'llm' AND e.phase IN ({marks})
+            ORDER BY e.seq""",
+        (session_id, *phases),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def search_outputs(query: str, days: int = 14, limit: int = 12) -> list[dict]:
+    """Done dispatch runs in the last `days` whose output contains every word of `query` (case-insensitive)."""
+    from datetime import timedelta
+    words = [w for w in re.split(r"\s+", query.strip().lower()) if w][:6]
+    if not words:
+        return []
+    conn = _get_conn()
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    likes = " AND ".join("LOWER(m.content) LIKE ?" for _ in words)
+    rows = conn.execute(
+        f"""SELECT s.id, s.dispatch_id, s.agent, s.started_at, m.content FROM sessions s
+            JOIN messages m ON m.id = (SELECT id FROM messages WHERE session_id = s.id AND role = 'assistant' ORDER BY id DESC LIMIT 1)
+            WHERE s.dispatch_id IS NOT NULL AND s.started_at >= ? AND {_DONE_RUN} AND {likes}
+            ORDER BY s.started_at DESC LIMIT ?""",
+        (since, *[f"%{w}%" for w in words], limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def create_dispatch(
     agent: str,
     prompt: str,
@@ -708,7 +777,7 @@ _AGENT_FIELDS = [
     "sources", "sub_queries", "tool_bindings", "direct_sources",
     "freshness", "planner_query_count", "max_validator_loops",
     "validate_links", "fetch_content",
-    "is_builtin", "color", "tags", "created_at", "updated_at",
+    "is_builtin", "color", "tags", "recall_runs", "created_at", "updated_at",
 ]
 
 

@@ -35,6 +35,7 @@ def agent_row_to_config(row: dict) -> DomainConfig:
         fetch_content=bool(row.get("fetch_content", 0)),
         direct_sources=json.loads(row.get("direct_sources") or "[]"),
         tool_bindings=json.loads(row.get("tool_bindings") or "[]"),
+        recall_runs=2 if row.get("recall_runs") is None else int(row["recall_runs"]),
     )
 
 

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeout
 from datetime import datetime
@@ -10,12 +11,13 @@ from providers import LLMClient, MODEL, PROVIDER
 from dotenv import load_dotenv
 
 import db
+import digests
 import metrics
 from agent_config import SubQueryConfig, DomainConfig
 from prompts import (
     PROMPT_PLANNER, PROMPT_RANKER, PROMPT_VALIDATOR,
     PROMPT_PAGE_SUMMARIZER, PROMPT_SYNTHESIZER,
-    PROMPT_AGGREGATOR, _FRESHNESS_LABELS,
+    PROMPT_AGGREGATOR, PROMPT_PREVIOUS, PROMPT_PLANNER_PREVIOUS, _FRESHNESS_LABELS,
 )
 from tools import TOOLS, call_web_search, call_web_fetch, dispatch_tool
 
@@ -245,6 +247,24 @@ def _parse_json_output(text: Optional[str], fallback: dict) -> dict:
     return fallback
 
 
+def _load_previous(session_id: int, config: DomainConfig) -> Optional[dict]:
+    """Earlier digests of this run's dispatch (previous-run awareness), or None. Never fails the run."""
+    try:
+        prev = digests.previous_digests(session_id, config.recall_runs)
+    except Exception as e:
+        print(f"[pipeline] recall: WARNING: could not load previous digests ({type(e).__name__}: {e})")
+        return None
+    if prev:
+        print(f"[pipeline] recall: {prev['runs']} previous digest(s), {prev['chars']} chars, {len(prev['urls'])} URLs")
+    return prev
+
+
+def _recall_event(rec, prev: dict, current_urls: set, sub: Optional[str] = None) -> None:
+    repeats = sum(1 for u in current_urls if u in prev["urls"])
+    rec.event("recall", "synthesizer", "recall", sub=sub, runs=prev["runs"], chars=prev["chars"],
+              repeat_urls=repeats, new_urls=len(current_urls) - repeats)
+
+
 class AgentPipeline:
     """
     Orchestrates a multi-phase micro-agent pipeline:
@@ -263,6 +283,7 @@ class AgentPipeline:
         sub: Optional[str] = None,
     ):
         self.client = client
+        self.previous: Optional[dict] = None  # earlier digests of the dispatch (top-level pipeline only)
         self.session_id = session_id
         self.config = config
         self.cancel_event = cancel_event
@@ -288,6 +309,7 @@ class AgentPipeline:
         goal = self.config.goal_template.replace("{query}", query)
         if self.sub is None:
             metrics.record_config(self.rec, self.config, MODEL)
+            self.previous = _load_previous(self.session_id, self.config)
 
         print(f"[pipeline] model={MODEL}")
 
@@ -311,6 +333,9 @@ class AgentPipeline:
                 goal=goal,
                 sources_hint=sources_hint,
             )
+            if self.previous and self.previous["headings"]:
+                plan_prompt += PROMPT_PLANNER_PREVIOUS.format(
+                    when=self.previous["when"], headings="; ".join(self.previous["headings"][:12]))
             with self.rec.phase("planner", sub=self.sub):
                 _t0 = time.monotonic()
                 queries_json = self._micro("planner", plan_prompt, goal)
@@ -386,6 +411,8 @@ class AgentPipeline:
             self.rec.event("synth_input", "synthesizer", "synthesizer", sub=self.sub, ok=False, error="no research collected")
             return None
         synth_prompt = PROMPT_SYNTHESIZER.format(output_template=self.config.output_template)
+        if self.previous:
+            synth_prompt += PROMPT_PREVIOUS.format(previous=self.previous["block"])
         has_summaries = any(e.get("phase") == "summaries" for e in self.research_buffer)
         has_fetch = any(e.get("phase") == "fetch" for e in self.research_buffer)
         search_limit = 0 if (has_summaries or has_fetch) else _SYNTHESIZER_BUFFER_LIMIT
@@ -407,6 +434,8 @@ class AgentPipeline:
                        chars_after=len(synth_input), search_content_limit=search_limit, trim_cap=trim_cap,
                        hard_truncated=hard_truncated, source_errors_note="[SOURCE ERRORS]" in synth_input,
                        **self._buffer_sources())
+        if self.previous:
+            _recall_event(self.rec, self.previous, self._buffer_urls(), sub=self.sub)
         with self.rec.phase("synthesizer", sub=self.sub):
             _t0 = time.monotonic()
             result = self._micro(
@@ -728,6 +757,7 @@ class AgentPipeline:
                             "title": r.get("title", ""),
                             "url": r.get("url", ""),
                             **({"content": r.get("content", "") if search_content_limit is None else r.get("content", "")[:search_content_limit]} if search_content_limit != 0 else {}),
+                            **self._prev_tag(r.get("url", "")),
                         }
                         for r in item.get("results", [])
                     ]
@@ -740,16 +770,18 @@ class AgentPipeline:
                     continue  # summaries phase supersedes raw fetch
                 if fetch_content_limit is not None:
                     capped = [
-                        {"url": p.get("url", ""), "content": p.get("content", "")[:fetch_content_limit]}
+                        {"url": p.get("url", ""), "content": p.get("content", "")[:fetch_content_limit], **self._prev_tag(p.get("url", ""))}
                         for p in entry.get("content", [])
                     ]
                     compact.append({"phase": "fetch", "content": capped})
                 else:
-                    compact.append(entry)
-            elif phase == "summaries":
-                compact.append(entry)
+                    compact.append(self._tag_pages(entry))
+            elif phase == "direct" and self.previous:
+                # Inbox pages are text blocks ("url: U" per item): mark repeats inline, keep everything.
+                compact.append({**entry, "content": [
+                    {**p, "content": self._tag_inbox_text(p.get("content", ""))} for p in entry.get("content", [])]})
             else:
-                compact.append(entry)
+                compact.append(self._tag_pages(entry))
 
         output = json.dumps(compact, indent=2)
         if all_source_errors:
@@ -763,6 +795,35 @@ class AgentPipeline:
                 lines.append(f"- {source}: failed on {len(msgs)}/{total_queries} queries ({msgs[0]})")
             output += "\n" + "\n".join(lines)
         return output
+
+    # ── Previous-run awareness: mark (never drop) items whose URL an earlier digest cited ──
+    def _prev_tag(self, url: str) -> dict:
+        when = self.previous["urls"].get(url) if self.previous and url else None
+        return {"previously_reported": when} if when else {}
+
+    def _tag_pages(self, entry: dict) -> dict:
+        if not self.previous or entry.get("phase") not in ("fetch", "summaries"):
+            return entry
+        return {**entry, "content": [{**p, **self._prev_tag(p.get("url", ""))} for p in entry.get("content", [])]}
+
+    def _tag_inbox_text(self, text: str) -> str:
+        def mark(m: "re.Match") -> str:
+            when = self.previous["urls"].get(m.group(1))
+            return m.group(0) + (f"\npreviously_reported: {when}" if when else "")
+        return re.sub(r"^url: (\S+)$", mark, text, flags=re.M)
+
+    def _buffer_urls(self) -> set:
+        """Every source URL in the buffer (search results, inbox items, fetched/summarized pages)."""
+        out: set = set()
+        for entry in self.research_buffer:
+            for item in entry.get("content", []) or []:
+                if entry.get("phase") == "search":
+                    out.update(r.get("url") for r in item.get("results", []) if r.get("url"))
+                elif entry.get("phase") == "direct":
+                    out.update(re.findall(r"^url: (\S+)$", item.get("content", ""), flags=re.M))
+                elif item.get("url"):
+                    out.add(item["url"])
+        return out
 
     def _buffer_summary(self) -> str:
         return json.dumps(self.research_buffer, indent=2)
@@ -804,6 +865,7 @@ class MultiAgentPipeline:
     def run(self, query: str) -> Optional[str]:
         rec = metrics.get(self.session_id)
         metrics.record_config(rec, self.config, MODEL)
+        previous = _load_previous(self.session_id, self.config)
         prior_lines: list[str] = []
         sub_results: dict[str, str] = {}
 
@@ -856,10 +918,14 @@ class MultiAgentPipeline:
         rec.event("aggregate_input", "aggregator", "aggregator", chars=len(agg_input),
                   sub_results={label: len(r) for label, r in sub_results.items()},
                   missing=[sq.label for sq in self.config.sub_queries if sq.label not in sub_results])
+        agg_prompt = PROMPT_AGGREGATOR.format(output_template=self.config.output_template)
+        if previous:
+            agg_prompt += PROMPT_PREVIOUS.format(previous=previous["block"])
+            _recall_event(rec, previous, set(digests.urls(agg_input)))
         with rec.phase("aggregator"):
             return run_micro_agent(
                 self.client, self.session_id,
-                PROMPT_AGGREGATOR.format(output_template=self.config.output_template),
+                agg_prompt,
                 agg_input,
                 tools=[],
                 max_iterations=1,

@@ -2162,6 +2162,10 @@ function renderStatsPanel(s, events) {
     const max = Math.max(...doms.map(d => d[1]));
     html += sec('Source domains', `<div class="bars-h">${doms.slice(0, 10).map(([d, n]) => `<div class="bar-row"><span class="l">${esc(d)}</span><span class="t"><span class="f" style="display:block;width:${(n / max * 100).toFixed(1)}%"></span></span><span class="v">${n}</span></div>`).join('')}</div>`);
   }
+  if (m.recall) {
+    const r = m.recall, lb = out.labels || {};
+    html += sec('Previous digests', `<div class="meta">${r.runs} earlier digest${r.runs === 1 ? '' : 's'} shown (${(r.chars / 1000).toFixed(1)}k chars) · sources: ${r.new_urls} new, ${r.repeat_urls} seen before · output: ${lb.new || 0} New, ${lb.update || 0} Update</div>`);
+  }
   if (out.sections) {
     html += sec('Output sections', `<div class="sec-tags">${Object.entries(out.sections).map(([k, ok]) => `<span class="sec-tag${ok ? '' : ' miss'}">${esc(k)}</span>`).join('')}</div>`,
       out.missing_sections?.length ? `${out.missing_sections.length} missing` : 'all present');
@@ -3148,6 +3152,7 @@ async function openAgentConfigSheet(name) {
     ${f('cfg-label', 'Label', inp('cfg-label', agent?.label))}
     ${f('cfg-desc', 'Description', inp('cfg-desc', agent?.description))}
     ${f('cfg-tags', 'Tags', inp('cfg-tags', parseTags(agent?.tags).join(', '), 'text', 'e.g. world, news'), 'Comma-separated; every dispatch of this agent gets them')}
+    ${f('cfg-recall', 'Recall previous digests', inp('cfg-recall', agent?.recall_runs ?? 2, 'number'), 'How many earlier digests of the same dispatch the writer sees, to mark repeats as Update/New. 0 = off')}
     <div><label style="display:block;font-size:12px;font-weight:500;color:var(--fg-2);margin-bottom:8px">Color</label><input type="hidden" id="cfg-color" value="${initHue}"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${colorSwatches}</div></div>
     <hr style="border:none;border-top:1px solid var(--line)">
     <div>
@@ -3316,6 +3321,7 @@ async function saveAgentConfig() {
     sub_queries: isDirect ? null : subs,
     color: parseInt(document.getElementById('cfg-color')?.value) || null,
     tags: splitTags(document.getElementById('cfg-tags')?.value),
+    recall_runs: Math.max(0, Math.min(5, parseInt2('cfg-recall', 2))),
   };
 
   const isEdit = !!_editingAgentName;

@@ -25,3 +25,4 @@ class DomainConfig:
     sub_queries: Optional[list[SubQueryConfig]] = None
     direct_sources: list[str] = field(default_factory=list)  # URL templates fetched directly; {today} substituted
     tool_bindings: list[str] = field(default_factory=list)
+    recall_runs: int = 2  # previous digests of the same dispatch shown to the synthesizer; 0 = off

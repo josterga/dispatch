@@ -309,6 +309,7 @@ class AgentRequest(BaseModel):
     fetch_content: bool = False
     color: Optional[int] = None
     tags: list[str] = []
+    recall_runs: Optional[int] = None  # None = default (2); 0 = off
 
 
 @app.get("/api/tools")

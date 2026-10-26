@@ -408,7 +408,8 @@ def _output_stats(output: Optional[str], config: Optional[dict]) -> dict:
     text = output or ""
     headings = [l.lstrip("#").strip() for l in text.splitlines() if re.match(r"^#{1,6} ", l)]
     urls = sorted({u.rstrip(".,;:") for u in _URL_RE.findall(text)})
-    out: dict = {"chars": len(text), "words": len(text.split()), "headings": headings, "urls": urls}
+    out: dict = {"chars": len(text), "words": len(text.split()), "headings": headings, "urls": urls,
+                 "labels": {"update": len(re.findall(r"\bUpdate:", text)), "new": len(re.findall(r"\bNew:", text))}}
     template = (config or {}).get("output_template") or ""
     required = [l.lstrip("#").strip() for l in template.splitlines() if re.match(r"^#{1,6} ", l)]
     if required:
@@ -582,6 +583,14 @@ def rollup(events: list[dict], run: dict, status: str, output: Optional[str],
     if notify_ev:
         timing["notify_ms"] = notify_ev["duration_ms"]
 
+    recall_evs = by_kind.get("recall", [])
+    recall = {
+        "runs": max(e["data"].get("runs") or 0 for e in recall_evs),
+        "chars": max(e["data"].get("chars") or 0 for e in recall_evs),
+        "repeat_urls": sum(e["data"].get("repeat_urls") or 0 for e in recall_evs),
+        "new_urls": sum(e["data"].get("new_urls") or 0 for e in recall_evs),
+    } if recall_evs else None
+
     cfg_ev = next(iter(by_kind.get("config", [])), None)
     decisions = {}
     for e in by_kind.get("decision", []):
@@ -604,6 +613,7 @@ def rollup(events: list[dict], run: dict, status: str, output: Optional[str],
         "fetch": fetch,
         "synth": synth,
         "output": out,
+        "recall": recall,
         "notify": notify,
         "host": host,
         "planner_queries": sum(len(d.get("queries") or []) for d in decisions.get("planner", []) if not d.get("direct_sources")) or None,
@@ -648,6 +658,10 @@ def run_checks(m: dict, median_ms: Optional[int]) -> list[dict]:
     missing = (m.get("output") or {}).get("missing_sections")
     if missing and m.get("status") == "done":
         hit("missing_sections", "missing: " + ", ".join(missing))
+    recall, labels = m.get("recall") or {}, (m.get("output") or {}).get("labels") or {}
+    if recall.get("repeat_urls") and not recall.get("new_urls") and not (labels.get("update") or labels.get("new")) \
+            and m.get("status") == "done":
+        hit("all_repeats", f"every source ({recall['repeat_urls']}) was in an earlier digest and nothing is marked New/Update")
     run_ms = (m.get("timing") or {}).get("run_ms")
     if median_ms and run_ms and run_ms > SLOW_FACTOR * median_ms:
         hit("slow", f"{run_ms // 1000}s vs a median of {median_ms // 1000}s")
