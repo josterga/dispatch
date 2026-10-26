@@ -105,7 +105,29 @@ class LLMClient:
 
     # ── Ollama ────────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _convert_messages_for_ollama(messages: list) -> list:
+        """run_agent stores tool-call arguments as JSON strings (OpenAI style); Ollama wants dicts."""
+        out = []
+        for m in messages:
+            if m.get("role") == "assistant" and m.get("tool_calls"):
+                calls = []
+                for tc in m["tool_calls"]:
+                    fn = dict(tc.get("function") or {})
+                    if isinstance(fn.get("arguments"), str):
+                        try:
+                            fn["arguments"] = json.loads(fn["arguments"] or "{}")
+                        except ValueError:
+                            fn["arguments"] = {}
+                    calls.append({"function": fn})
+                m = {**{k: v for k, v in m.items() if k != "_anthropic_blocks"}, "tool_calls": calls}
+            elif m.get("role") == "tool":
+                m = {k: v for k, v in m.items() if k != "tool_use_id"}
+            out.append(m)
+        return out
+
     def _chat_ollama(self, model, messages, tools, temperature, max_tokens, num_ctx, keep_alive, think=None) -> NormalizedResponse:
+        messages = self._convert_messages_for_ollama(messages)
         options: dict = {"temperature": temperature}
         if num_ctx is not None:
             options["num_ctx"] = num_ctx

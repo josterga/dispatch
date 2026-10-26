@@ -4,7 +4,8 @@ import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from queue import Queue
+import itertools
+from queue import PriorityQueue
 from typing import Optional
 
 import os
@@ -126,14 +127,16 @@ class JobManager:
         self.pipeline_configs: dict = {}
         self._jobs: dict = {}
         self._lock = threading.Lock()
-        self._queue: Queue = Queue()
+        # (priority, order, job_id, fn, args): chat turns (priority 0) go ahead of queued runs (1), FIFO within a priority.
+        self._queue: PriorityQueue = PriorityQueue()
+        self._order = itertools.count()
 
     def start_worker(self) -> None:
         threading.Thread(target=self._worker, daemon=True, name="job-worker").start()
 
     def _worker(self) -> None:
         while True:
-            job_id, fn, args = self._queue.get()
+            _, _, job_id, fn, args = self._queue.get()
             try:
                 with self._lock:
                     job = self._jobs.get(job_id)
@@ -145,6 +148,13 @@ class JobManager:
             finally:
                 self._queue.task_done()
 
+    def _enqueue(self, job_id: str, fn, args: tuple = (), priority: int = 1) -> None:
+        order = next(self._order)
+        with self._lock:
+            if job_id in self._jobs:
+                self._jobs[job_id].update(priority=priority, order=order)
+        self._queue.put((priority, order, job_id, fn, args))
+
     # ── State accessors ───────────────────────────────────────────────────────
 
     def get(self, job_id: str) -> Optional[dict]:
@@ -152,16 +162,18 @@ class JobManager:
             return self._jobs.get(job_id)
 
     def get_by_session(self, session_id: int) -> Optional[dict]:
+        """The session's queued/running job, else its latest one (a chat thread has one job per turn)."""
         with self._lock:
-            for job_id, job in self._jobs.items():
-                if job["session_id"] == session_id:
-                    return {
-                        "job_id": job_id,
-                        "status": job["status"],
-                        "session_id": job["session_id"],
-                        "started_at": job["started_at"],
-                    }
-        return None
+            mine = [(jid, j) for jid, j in self._jobs.items() if j["session_id"] == session_id]
+            if not mine:
+                return None
+            job_id, job = next(((jid, j) for jid, j in mine if j["status"] in ("queued", "running")), mine[-1])
+            return {
+                "job_id": job_id,
+                "status": job["status"],
+                "session_id": job["session_id"],
+                "started_at": job["started_at"],
+            }
 
     def _prune(self) -> None:
         """Drop jobs that finished over _JOB_TTL_SECONDS ago (results stay in the DB). Caller holds the lock."""
@@ -170,8 +182,9 @@ class JobManager:
             del self._jobs[jid]
 
     def _queue_position(self, job_id: str) -> Optional[int]:
-        """1-based place among queued jobs (dict order = submit order). Caller holds the lock."""
-        queued = [jid for jid, j in self._jobs.items() if j["status"] == "queued"]
+        """1-based place among queued jobs, in the order the worker will take them. Caller holds the lock."""
+        queued = sorted((jid for jid, j in self._jobs.items() if j["status"] == "queued"),
+                        key=lambda jid: (self._jobs[jid].get("priority", 1), self._jobs[jid].get("order", 0)))
         return queued.index(job_id) + 1 if job_id in queued else None
 
     def queue_position(self, job_id: str) -> Optional[int]:
@@ -194,10 +207,12 @@ class JobManager:
                     "status": j["status"],
                     "session_id": j["session_id"],
                     "agent": j.get("agent"),
+                    "kind": j.get("kind", "run"),
                     "dispatch_id": j.get("dispatch_id"),
                     "started_at": j["started_at"],
                     "queue_position": self._queue_position(jid),
-                    "step": _current_step(j["tee"].getvalue()) if j["status"] == "running" and j.get("tee") else None,
+                    "step": j.get("step") if j.get("kind") == "chat" else (
+                        _current_step(j["tee"].getvalue()) if j["status"] == "running" and j.get("tee") else None),
                 }
                 for jid, j in self._jobs.items()
                 if j["status"] in ("queued", "running")
@@ -231,7 +246,42 @@ class JobManager:
                 "cancel_event": cancel_event,
                 "started_at": datetime.now(timezone.utc).isoformat(),
             }
-        self._queue.put((job_id, self._execute_http, (job_id, body, cancel_event, session_id, agent_name, inline_config)))
+        self._enqueue(job_id, self._execute_http, (job_id, body, cancel_event, session_id, agent_name, inline_config))
+        return job_id
+
+    def submit_chat(self, chat_id: int, question: str, research: bool) -> str:
+        """Queue one digest-chat turn (ahead of queued runs; never preempts a running one)."""
+        import chat
+        job_id = uuid.uuid4().hex
+        cancel_event = threading.Event()
+        with self._lock:
+            self._prune()
+            self._jobs[job_id] = {
+                "status": "queued", "kind": "chat", "agent": "chat", "dispatch_id": None,
+                "session_id": chat_id, "result": None, "error": None, "step": None,
+                "cancel_event": cancel_event,
+                "started_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+        def set_step(label: str) -> None:
+            with self._lock:
+                self._jobs[job_id]["step"] = label
+
+        def _run():
+            _status, _result, _err = "error", None, None
+            try:
+                answer = chat.run_turn(self.client, chat_id, question, research, cancel_event, on_step=set_step)
+                _status = "cancelled" if cancel_event.is_set() else ("done" if answer else "error")
+                _result = answer
+            except Exception as e:
+                _err = f"{type(e).__name__}: {e}"
+                db.log_message(chat_id, "error", _err)
+            finally:
+                with self._lock:
+                    self._jobs[job_id].update(status=_status, finished_at=time.monotonic(), step=None,
+                                              result=_result, error=_err)
+
+        self._enqueue(job_id, _run, (), priority=0)
         return job_id
 
     def submit_and_wait(self, body, cancel_event, inline_config=None) -> dict:
@@ -252,7 +302,7 @@ class JobManager:
             self._execute_http(job_id, body, cancel_event, session_id=None, agent_name=None, inline_config=inline_config)
             done_event.set()
 
-        self._queue.put((job_id, _run, ()))
+        self._enqueue(job_id, _run)
         done_event.wait()
         with self._lock:
             return self._jobs[job_id]
@@ -395,7 +445,7 @@ class JobManager:
                     _notify(self.client, session_id, agent, _result, verdict)
                 metrics.finish(session_id, _mstatus, answer, _exc)
 
-        self._queue.put((job_id, _run, ()))
+        self._enqueue(job_id, _run)
 
     # ── Internal execution ────────────────────────────────────────────────────
 

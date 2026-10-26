@@ -141,7 +141,7 @@ _SETTINGS_KEYS = [
     "PROVIDER", "MODEL", "FAST_MODEL", "OLLAMA_BASE_URL",
     "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "FIREWORKS_API_KEY",
     "OLLAMA_API_KEY", "BRAVE_API_KEY", "JINA_API_KEY", "SEARXNG_URL",
-    "LOCATION",
+    "LOCATION", "USER_PROFILE",
     "CONTEXT_BUDGET", "TEMPERATURE", "TIMEOUT",
 ]
 
@@ -289,6 +289,86 @@ async def cancel_job(job_id: str, request: Request):
     if not _jobs.cancel(job_id):
         raise HTTPException(status_code=404, detail="Job not found")
     return {"job_id": job_id, "status": "cancelling"}
+
+
+# ── Digest chat (chat.py): threads over the digests, one queued job per turn ──
+
+class ChatTurnRequest(BaseModel):
+    question: str
+    research: bool = False                  # web_search / web_fetch available this turn
+    focus_session_id: Optional[int] = None  # new threads only: the run the chat was opened from
+
+
+def _chat_busy(chat_id: int) -> bool:
+    job = _jobs.get_by_session(chat_id)
+    return bool(job and job["status"] in ("queued", "running"))
+
+
+@app.get("/api/chats")
+async def list_chats_route(request: Request, dispatch_id: Optional[int] = None):
+    _check_auth(request)
+    return db.list_chats(dispatch_id=dispatch_id)
+
+
+@app.get("/api/chats/counts")
+async def chat_counts_route(request: Request):
+    _check_auth(request)
+    return db.chat_counts_by_dispatch()
+
+
+@app.post("/api/chats")
+async def create_chat_route(request: Request, body: ChatTurnRequest):
+    _check_auth(request)
+    q = body.question.strip()
+    if not q:
+        raise HTTPException(status_code=400, detail="Empty question")
+    if body.focus_session_id and not db.session_dispatch_id(body.focus_session_id):
+        raise HTTPException(status_code=400, detail="focus_session_id is not a dispatch run")
+    chat_id = db.create_chat(" ".join(q.split())[:80], body.focus_session_id)
+    job_id = _jobs.submit_chat(chat_id, q, body.research)
+    return {"chat_id": chat_id, "job_id": job_id}
+
+
+@app.post("/api/chats/{chat_id}/turns")
+async def chat_turn_route(chat_id: int, request: Request, body: ChatTurnRequest):
+    _check_auth(request)
+    q = body.question.strip()
+    if not q:
+        raise HTTPException(status_code=400, detail="Empty question")
+    if not db.get_chat(chat_id):
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if _chat_busy(chat_id):
+        raise HTTPException(status_code=409, detail="This chat is still answering")
+    return {"chat_id": chat_id, "job_id": _jobs.submit_chat(chat_id, q, body.research)}
+
+
+@app.get("/api/chats/{chat_id}")
+async def get_chat_route(chat_id: int, request: Request):
+    _check_auth(request)
+    c = db.get_chat(chat_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    import chat as _chat
+    labels = _chat._labels()
+    for st in c["steps"]:
+        st["label"] = _chat.step_label(st["tool_name"], st["args"], labels)
+    c["focus_dispatch"] = labels.get(c.get("focus_dispatch_id"))
+    job = _jobs.get_by_session(chat_id)
+    c["job"] = job if job and job["status"] in ("queued", "running") else None
+    if c["job"]:
+        c["job"]["queue_position"] = _jobs.queue_position(job["job_id"])
+        c["job"]["step"] = (_jobs.get(job["job_id"]) or {}).get("step")
+    return c
+
+
+@app.delete("/api/chats/{chat_id}")
+async def delete_chat_route(chat_id: int, request: Request):
+    _check_auth(request)
+    if _chat_busy(chat_id):
+        raise HTTPException(status_code=409, detail="This chat is still answering")
+    if not db.delete_chat(chat_id):
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return {"deleted": chat_id}
 
 
 class AgentRequest(BaseModel):

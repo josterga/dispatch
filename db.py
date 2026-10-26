@@ -150,7 +150,8 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             conn.commit()
         except sqlite3.OperationalError:
             pass  # column already exists
-    for col, typedef in [("agent", "TEXT"), ("source", "TEXT"), ("ended_at", "TEXT"), ("viewed_at", "TEXT"), ("logs", "TEXT"), ("cron_id", "INTEGER"), ("dispatch_id", "INTEGER"), ("metrics", "TEXT")]:
+    for col, typedef in [("agent", "TEXT"), ("source", "TEXT"), ("ended_at", "TEXT"), ("viewed_at", "TEXT"), ("logs", "TEXT"), ("cron_id", "INTEGER"), ("dispatch_id", "INTEGER"), ("metrics", "TEXT"),
+                        ("title", "TEXT"), ("focus_session_id", "INTEGER")]:  # title/focus: digest chat threads
         try:
             conn.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
             conn.commit()
@@ -299,8 +300,9 @@ def log_tool_call(
 
 
 def get_sessions(limit: int = 50, agent: Optional[str] = None) -> list[dict]:
+    """Runs (digest chat threads are listed by list_chats instead)."""
     conn = _get_conn()
-    where = "WHERE s.agent = ?" if agent else ""
+    where = "WHERE COALESCE(s.source, '') != 'chat'" + (" AND s.agent = ?" if agent else "")
     params = (agent, limit) if agent else (limit,)
     rows = conn.execute(
         f"""
@@ -558,6 +560,67 @@ def search_outputs(query: str, days: int = 14, limit: int = 12) -> list[dict]:
         (since, *[f"%{w}%" for w in words], limit),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ── Digest chat threads: sessions with source 'chat'; turns in messages, tool steps in tool_calls ──
+
+def create_chat(title: str, focus_session_id: Optional[int] = None) -> int:
+    conn = _get_conn()
+    cur = conn.execute(
+        "INSERT INTO sessions (model, agent, source, started_at, viewed_at, title, focus_session_id) VALUES ('', 'chat', 'chat', ?, ?, ?, ?)",
+        (_now(), _now(), title[:120], focus_session_id),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def list_chats(dispatch_id: Optional[int] = None, limit: int = 100) -> list[dict]:
+    conn = _get_conn()
+    where = "AND f.dispatch_id = ?" if dispatch_id else ""
+    rows = conn.execute(
+        f"""SELECT s.id, s.title, s.started_at, s.focus_session_id, f.dispatch_id AS focus_dispatch_id,
+                   COALESCE((SELECT MAX(created_at) FROM messages WHERE session_id = s.id), s.started_at) AS updated_at,
+                   (SELECT COUNT(*) FROM messages WHERE session_id = s.id AND role = 'user') AS turns
+            FROM sessions s LEFT JOIN sessions f ON f.id = s.focus_session_id
+            WHERE s.source = 'chat' {where}
+            ORDER BY updated_at DESC LIMIT ?""",
+        (dispatch_id, limit) if dispatch_id else (limit,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def chat_counts_by_dispatch() -> dict[int, int]:
+    rows = _get_conn().execute(
+        """SELECT f.dispatch_id, COUNT(*) AS n FROM sessions s JOIN sessions f ON f.id = s.focus_session_id
+           WHERE s.source = 'chat' AND f.dispatch_id IS NOT NULL GROUP BY f.dispatch_id"""
+    ).fetchall()
+    return {r["dispatch_id"]: r["n"] for r in rows}
+
+
+def get_chat(chat_id: int) -> Optional[dict]:
+    conn = _get_conn()
+    s = conn.execute(
+        """SELECT s.id, s.title, s.started_at, s.focus_session_id, f.dispatch_id AS focus_dispatch_id
+           FROM sessions s LEFT JOIN sessions f ON f.id = s.focus_session_id WHERE s.id = ? AND s.source = 'chat'""",
+        (chat_id,),
+    ).fetchone()
+    if not s:
+        return None
+    msgs = conn.execute("SELECT id, role, content, created_at FROM messages WHERE session_id = ? ORDER BY id", (chat_id,)).fetchall()
+    steps = conn.execute("SELECT id, tool_name, args, duration_ms, created_at FROM tool_calls WHERE session_id = ? ORDER BY id", (chat_id,)).fetchall()
+    return {**dict(s), "messages": [dict(m) for m in msgs],
+            "steps": [{**dict(t), "args": json.loads(t["args"] or "{}")} for t in steps]}
+
+
+def delete_chat(chat_id: int) -> bool:
+    conn = _get_conn()
+    if not conn.execute("SELECT 1 FROM sessions WHERE id = ? AND source = 'chat'", (chat_id,)).fetchone():
+        return False
+    for table in ("messages", "tool_calls"):
+        conn.execute(f"DELETE FROM {table} WHERE session_id = ?", (chat_id,))
+    conn.execute("DELETE FROM sessions WHERE id = ?", (chat_id,))
+    conn.commit()
+    return True
 
 
 def create_dispatch(

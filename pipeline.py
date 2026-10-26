@@ -78,8 +78,12 @@ def run_agent(
     num_predict: Optional[int] = None,
     phase: str = "agent",
     sub: Optional[str] = None,
+    tool_router=None,
 ) -> Optional[str]:
-    """Run the agentic loop. Returns the final answer, or None if max iterations hit or cancelled."""
+    """Run the agentic loop. Returns the final answer, or None if max iterations hit or cancelled.
+
+    tool_router(name, args, session_id) -> dict runs the model's tool calls (default: tools.dispatch_tool).
+    """
     rec = metrics.get(session_id)
     if tools is None:
         tools = TOOLS
@@ -140,7 +144,7 @@ def run_agent(
             return msg.content
 
         for tc in msg.tool_calls:
-            result = dispatch_tool(tc.function.name, tc.function.arguments, session_id)
+            result = (tool_router or dispatch_tool)(tc.function.name, tc.function.arguments, session_id)
             tool_content = json.dumps(result)
             if TOOL_RESULT_MAX_CHARS is not None and len(tool_content) > TOOL_RESULT_MAX_CHARS:
                 tool_content = tool_content[:TOOL_RESULT_MAX_CHARS] + "…[truncated]"

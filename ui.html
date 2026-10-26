@@ -3409,6 +3409,7 @@ async function loadSettings() {
       <div>
         <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Personalization</div>
         ${f('s-location', 'Location', inp('s-location', val('LOCATION'), 'text', 'e.g. San Francisco, CA'), 'Used to localize search results and agent context')}
+        ${f('s-profile', 'About me', inp('s-profile', val('USER_PROFILE'), 'text', 'e.g. My setup: Ubuntu ThinkPad (Ollama, Tailscale), Raspberry Pi, Mac. Interests: …'), 'One line the digest chat knows about you, so it can judge what is relevant to you')}
       </div>
       <hr style="border:none;border-top:1px solid var(--line)">
       <details>
@@ -3459,6 +3460,7 @@ async function saveSettings() {
     JINA_API_KEY: document.getElementById('s-jina')?.value?.trim() ?? '',
     SEARXNG_URL: document.getElementById('s-searxng')?.value?.trim() ?? '',
     LOCATION: document.getElementById('s-location')?.value?.trim() ?? '',
+    USER_PROFILE: (document.getElementById('s-profile')?.value ?? '').replace(/\s+/g, ' ').trim(),
     CONTEXT_BUDGET: document.getElementById('s-budget')?.value ?? 'cloud',
     TEMPERATURE: document.getElementById('s-temp')?.value?.trim() ?? '0.2',
     TIMEOUT: document.getElementById('s-timeout')?.value?.trim() ?? '300',
