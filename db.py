@@ -543,6 +543,9 @@ def get_dispatches(enabled_only: bool = False) -> list[dict]:
                ) THEN '1' ELSE '0' END
              )
             ) AS last_7_days,
+            -- every run (scheduled, catch-up, manual); run_count only counts the scheduled ones, for max_runs
+            (SELECT COUNT(*) FROM sessions WHERE dispatch_id = d.id
+               AND COALESCE(json_extract(metrics, '$.status'), '') != 'missed') AS runs_total,
             ls.id AS last_session_id, ls.started_at AS last_started_at,
             json_extract(ls.metrics, '$.status')        AS last_status,
             json_extract(ls.metrics, '$.sources')       AS last_sources,

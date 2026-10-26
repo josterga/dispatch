@@ -8,7 +8,6 @@ from typing import Optional
 
 import uvicorn
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -20,7 +19,7 @@ from providers import LLMClient
 from pipeline import MODEL, OLLAMA_TIMEOUT
 from agent_loader import build_registry
 from agent_config import DomainConfig
-from job_manager import JobManager
+from job_manager import JobManager, cron_trigger
 
 load_dotenv(override=True)
 
@@ -47,7 +46,8 @@ def _register_dispatch_job(dispatch: dict) -> None:
         run_at = datetime.fromisoformat(dispatch["schedule"])
         trigger = DateTrigger(run_date=run_at, timezone="UTC")
     else:
-        trigger = CronTrigger.from_crontab(dispatch["schedule"], timezone=dispatch.get("timezone") or "UTC")
+        # end_date: nothing fires after "repeat until" (update_dispatch_run only archives after a run)
+        trigger = cron_trigger(dispatch["schedule"], dispatch.get("timezone"), end_date=dispatch.get("repeat_until"))
     _scheduler.add_job(
         _jobs.run_scheduled,
         trigger,
@@ -236,6 +236,8 @@ async def submit_job(request: Request, body: ChatRequest):
     _check_auth(request)
     agent_name, inline_config = _resolve_config(body)
     cancel_event = threading.Event()
+    if body.dispatch_id and _jobs.active_for_dispatch(body.dispatch_id):
+        raise HTTPException(status_code=409, detail="This dispatch is already queued or running")
 
     # Create session immediately so it appears in the sidebar while queued.
     session_id = db.start_session(body.model, agent=agent_name, source="http", viewed=True, dispatch_id=body.dispatch_id)
@@ -272,7 +274,7 @@ async def get_job(job_id: str, request: Request):
     return {
         "job_id": job_id,
         "status": job["status"],
-        "queue_position": job.get("queue_position") if job["status"] == "queued" else None,
+        "queue_position": _jobs.queue_position(job_id),
         "session_id": job["session_id"],
         "result": job["result"],
         "error": job["error"],
@@ -470,7 +472,7 @@ async def create_dispatch_route(request: Request, body: DispatchRequest):
             raise HTTPException(status_code=400, detail="Invalid datetime for once trigger")
     else:
         try:
-            CronTrigger.from_crontab(body.schedule, timezone=tz)
+            cron_trigger(body.schedule, tz)
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid cron expression or timezone")
     dispatch_id = db.create_dispatch(
@@ -500,7 +502,7 @@ async def update_dispatch_route(dispatch_id: int, request: Request, body: Dispat
             raise HTTPException(status_code=400, detail="Invalid datetime for once trigger")
     else:
         try:
-            CronTrigger.from_crontab(body.schedule, timezone=tz)
+            cron_trigger(body.schedule, tz)
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid cron expression or timezone")
     db.update_dispatch(

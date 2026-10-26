@@ -1082,6 +1082,14 @@ function isAutoLabel(label) {
   return !!label && /^(Daily at|(Sun|Mon|Tue|Wed|Thu|Fri|Sat)s? at|(Sun|Mon|Tue|Wed|Thu|Fri|Sat)s?[\/–])/.test(label);
 }
 
+// Every run of the dispatch; with a run limit, the tip shows how many scheduled runs count toward it.
+function runsCountHTML(c, bare) {
+  const n = c.runs_total ?? c.run_count ?? 0;
+  const text = bare ? `${n}` : `${n} run${n === 1 ? '' : 's'}`;
+  if (c.max_runs == null) return text;
+  return `<span data-tip="${esc(`${c.run_count}/${c.max_runs} scheduled runs (manual runs don't count)`)}">${text} · ${c.run_count}/${c.max_runs}</span>`;
+}
+
 // Unlabeled dispatches: the prompt, else the agent's name (the schedule is shown next to it already).
 function dispatchLabel(c, fallbackLen) {
   if (c.label && !isAutoLabel(c.label)) return c.label;
@@ -1368,8 +1376,8 @@ function renderDigest() {
     const id = `dc-${c.id}`;
     const isOpen = digestOpenCards.has(id);
     const label = dispatchLabel(c, 60);
-    const runs = c.max_runs ? `${c.run_count}/${c.max_runs}` : `${c.run_count}`;
     const when = s ? fmtRelTime(s.started_at) : '';
+    const runs = runsCountHTML(c);
 
     let body = '';
     if (!s) {
@@ -1386,7 +1394,7 @@ function renderDigest() {
       <div class="digest-card-hdr${isOpen ? ' open' : ''}" onclick="digestToggleCard('${id}', event)" data-session="${s?.id || ''}" data-dispatch="${c.id}">
         ${pillHTML(c.agent)}
         <h2 class="digest-card-title">${esc(label)}</h2>
-        <span class="meta-mono">${runs} runs</span>
+        <span class="meta-mono">${runs}</span>
         ${when ? `<span class="meta-mono">·</span><span class="meta-mono">${esc(when)}</span>` : ''}
         <button class="btn btn-ghost btn-sm" style="margin-left:4px" onclick="event.stopPropagation();digestToggleCard('${id}', event)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(${isOpen?90:0}deg);transition:transform 0.15s"><polyline points="9 6 15 12 9 18"/></svg>
@@ -1490,7 +1498,7 @@ function renderMobileAgents() {
     return `<div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;text-align:left;color:var(--fg)">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
         ${pillHTML(c.agent)}
-        <span class="meta-mono" style="margin-left:auto;font-size:10.5px;color:var(--fg-3)">${c.run_count} runs</span>
+        <span class="meta-mono" style="margin-left:auto;font-size:10.5px;color:var(--fg-3)">${runsCountHTML(c)}</span>
       </div>
       <div style="font-size:14.5px;font-weight:600;line-height:1.3;margin-bottom:4px">${esc(label)}</div>
       <div style="font-size:13px;color:var(--fg-3);line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${esc(c.prompt)}</div>
@@ -2401,7 +2409,7 @@ function renderActiveRows() {
       case 'agent': return (allAgents.find(a => a.name === x.c.agent)?.label || x.c.agent || '').toLowerCase();
       case 'next': return x.next ? x.next.getTime() : Infinity;
       case 'last': return x.c.last_started_at ? Date.parse(x.c.last_started_at) : 0;
-      case 'runs': return x.c.run_count || 0;
+      case 'runs': return x.c.runs_total || 0;
       case 'success': return x.st.success ?? -1;
       case 'avg': return x.st.avgMs ?? -1;
     }
@@ -2417,7 +2425,6 @@ function renderActiveRows() {
   const trashIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 20 7"/><path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>`;
 
   tb.innerHTML = rows.map(({ c, st }) => {
-    const runs = c.max_runs ? `${c.run_count}/${c.max_runs}` : `${c.run_count}`;
     const actions = kind === 'active'
       ? `<button class="btn btn-sm" title="Run now" onclick="event.stopPropagation();runDispatchNow(${c.id})">${playIcon}</button>
          <button class="btn btn-sm" onclick="event.stopPropagation();openAgentSheet(${c.id})">${editIcon} Edit</button>
@@ -2435,7 +2442,7 @@ function renderActiveRows() {
       <td><div style="font-weight:500">${esc(dispatchLabel(c, 40))}</div><div style="color:var(--fg-3);font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.prompt)}</div></td>
       <td>${schedCell}</td>
       <td>${lastCell}</td>
-      <td class="r"><span class="mono" style="color:var(--fg-2)">${runs}</span></td>
+      <td class="r"><span class="mono" style="color:var(--fg-2)">${runsCountHTML(c, true)}</span></td>
       <td class="r"><span class="mono" style="color:var(--fg-2)">${st.success != null ? Math.round(st.success * 100) + '%' : '—'}</span></td>
       <td class="r"><span class="mono" style="color:var(--fg-2)">${st.avgMs ? fmtDuration(Math.round(st.avgMs)) : '—'}</span></td>
       <td class="r">${kind === 'active' ? statusSparkHTML(st.days) : statusBadgeHTML('archived')}</td>
@@ -2557,7 +2564,7 @@ function renderSheetBody() {
 
   const promptVal = esc(sheetPrompt);
   const labelVal = esc(sheetLabel);
-  const untilVal = dispatch?.repeat_until ? dispatch.repeat_until.slice(0,10) : '';
+  const untilVal = dispatch?.repeat_until ? localDayKey(new Date(dispatch.repeat_until)) : '';
   const maxVal = dispatch?.max_runs != null ? dispatch.max_runs : '';
 
   document.getElementById('sheet-body').innerHTML = `
@@ -2642,7 +2649,7 @@ async function saveAgent() {
     schedule,
     timezone: BROWSER_TZ,
     trigger_type: 'cron',
-    repeat_until: untilVal ? new Date(untilVal).toISOString() : null,
+    repeat_until: untilVal ? new Date(untilVal + 'T23:59:59').toISOString() : null,  // through the end of that local day
     max_runs: maxVal ? parseInt(maxVal) : null,
   };
   try {
@@ -2731,6 +2738,7 @@ async function runDispatchNow(id) {
     method: 'POST', headers: headers(),
     body: JSON.stringify({ agent: cron.agent, messages: [{ role: 'user', content: cron.prompt }], dispatch_id: id }),
   });
+  if (res.status === 409) { setStatus('already running'); return; }
   if (!res.ok) { setStatus('error'); return; }
   const { session_id } = await res.json();
   await jobStarted(session_id, cron.agent);

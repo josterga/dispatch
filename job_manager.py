@@ -20,6 +20,40 @@ CATCH_UP_HOURS = float(os.getenv("DISPATCH_CATCH_UP_HOURS", "12"))
 _MAX_MISSED_RECORDS = 24  # per dispatch and startup, so a long outage doesn't flood the run list
 
 
+_DOW_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+
+
+def _cron_dow(field: str) -> str:
+    """Cron weekdays (0 or 7 = Sunday) → APScheduler names. APScheduler 3 numbers them from Monday,
+    so numeric fields must not reach it. Expanded to an explicit list: its name ranges can't wrap."""
+    if field == "*" or not any(c.isdigit() for c in field):
+        return field
+    days: set[int] = set()
+    for part in field.split(","):
+        rng, _, step = part.partition("/")
+        if rng == "*":
+            a, b = 0, 6
+        else:
+            lo, _, hi = rng.partition("-")
+            a = int(lo)
+            b = int(hi) if hi else (6 if step else a)
+        if not (0 <= a <= 7 and 0 <= b <= 7 and a <= b):
+            raise ValueError(f"bad day of week: {part}")
+        days.update(d % 7 for d in range(a, b + 1, int(step) if step else 1))
+    return ",".join(_DOW_NAMES[d] for d in sorted(days))
+
+
+def cron_trigger(expr: str, tz: Optional[str], end_date: Optional[str] = None):
+    """Like CronTrigger.from_crontab, but with standard cron weekday numbering."""
+    from apscheduler.triggers.cron import CronTrigger
+    fields = expr.split()
+    if len(fields) != 5:
+        raise ValueError(f"expected 5 cron fields, got {len(fields)}")
+    m, h, dom, mon, dow = fields
+    return CronTrigger(minute=m, hour=h, day=dom, month=mon, day_of_week=_cron_dow(dow),
+                       timezone=tz or "UTC", end_date=end_date)
+
+
 class TeeStream:
     def __init__(self, original, flush_cb=None):
         self.original = original
@@ -128,6 +162,23 @@ class JobManager:
                     }
         return None
 
+    def _queue_position(self, job_id: str) -> Optional[int]:
+        """1-based place among queued jobs (dict order = submit order). Caller holds the lock."""
+        queued = [jid for jid, j in self._jobs.items() if j["status"] == "queued"]
+        return queued.index(job_id) + 1 if job_id in queued else None
+
+    def queue_position(self, job_id: str) -> Optional[int]:
+        with self._lock:
+            return self._queue_position(job_id)
+
+    def active_for_dispatch(self, dispatch_id: int) -> Optional[str]:
+        """Status of the dispatch's queued or running job, if any."""
+        with self._lock:
+            for job in self._jobs.values():
+                if job.get("dispatch_id") == dispatch_id and job["status"] in ("queued", "running"):
+                    return job["status"]
+        return None
+
     def list_active(self) -> list:
         with self._lock:
             return [
@@ -138,7 +189,7 @@ class JobManager:
                     "agent": j.get("agent"),
                     "dispatch_id": j.get("dispatch_id"),
                     "started_at": j["started_at"],
-                    "queue_position": j.get("queue_position") if j["status"] == "queued" else None,
+                    "queue_position": self._queue_position(jid),
                     "step": _current_step(j["tee"].getvalue()) if j["status"] == "running" and j.get("tee") else None,
                 }
                 for jid, j in self._jobs.items()
@@ -167,7 +218,6 @@ class JobManager:
                 "status": "queued",
                 "agent": agent_name,
                 "dispatch_id": getattr(body, "dispatch_id", None),
-                "queue_position": self._queue.qsize() + 1,
                 "session_id": session_id,
                 "result": None, "error": None,
                 "cancel_event": cancel_event,
@@ -184,7 +234,6 @@ class JobManager:
         with self._lock:
             self._jobs[job_id] = {
                 "status": "queued",
-                "queue_position": self._queue.qsize() + 1,
                 "session_id": None, "result": None, "error": None,
                 "cancel_event": cancel_event,
                 "started_at": datetime.now(timezone.utc).isoformat(),
@@ -221,7 +270,6 @@ class JobManager:
         """On startup: find fire times that passed while dispatch was not running (APScheduler keeps
         no history and skips them silently). Catch up the latest one once, record the others as missed.
         down_since: the previous process's last heartbeat."""
-        from apscheduler.triggers.cron import CronTrigger
         from apscheduler.triggers.date import DateTrigger
         now = datetime.now(timezone.utc)
         until = now - timedelta(seconds=90)  # anything newer is APScheduler's to run
@@ -232,7 +280,7 @@ class JobManager:
                     t = datetime.fromisoformat(d["schedule"])
                     trig = DateTrigger(run_date=t if t.tzinfo else t.replace(tzinfo=timezone.utc))
                 else:
-                    trig = CronTrigger.from_crontab(d["schedule"], timezone=d.get("timezone") or "UTC")
+                    trig = cron_trigger(d["schedule"], d.get("timezone"))
                 last = db.get_latest_session_for_dispatch(d["id"], include_missed=True)
                 since = datetime.fromisoformat((last or {}).get("started_at") or d["created_at"])
                 if since.tzinfo is None:
@@ -268,11 +316,10 @@ class JobManager:
     def run_scheduled(self, dispatch_id: int, agent: str, prompt: str, trigger: str = "scheduled",
                       scheduled_for: Optional[str] = None) -> None:
         """Called by APScheduler for dispatch-triggered jobs (and on create with run_on_create)."""
-        with self._lock:
-            for job in self._jobs.values():
-                if job.get("dispatch_id") == dispatch_id and job["status"] in ("queued", "running"):
-                    print(f"[dispatch] skipping dispatch_id={dispatch_id}: job already active ({job['status']})")
-                    return
+        active = self.active_for_dispatch(dispatch_id)
+        if active:
+            print(f"[dispatch] skipping dispatch_id={dispatch_id}: job already active ({active})")
+            return
 
         agent_name = agent if agent in self.pipeline_configs else "general"
         job_id = uuid.uuid4().hex
@@ -288,7 +335,6 @@ class JobManager:
                 "status": "queued",
                 "agent": agent_name,
                 "dispatch_id": dispatch_id,
-                "queue_position": self._queue.qsize() + 1,
                 "session_id": session_id,
                 "result": None, "error": None,
                 "cancel_event": cancel_event,
@@ -307,10 +353,11 @@ class JobManager:
             try:
                 pipeline = create_pipeline(self.client, session_id, self.pipeline_configs[agent_name], cancel_event)
                 answer = pipeline.run(prompt)
-                _status = "done"
+                _status = "cancelled" if cancel_event.is_set() else "done"
                 _mstatus = _run_status(answer, cancel_event.is_set())
                 _result = answer if answer else "[no result — pipeline returned empty]"
-                db.log_message(session_id, "assistant", _result)
+                if _status != "cancelled":
+                    db.log_message(session_id, "assistant", _result)
             except Exception as e:
                 _exc = e
                 _err = str(e)
