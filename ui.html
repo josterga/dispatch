@@ -2333,7 +2333,7 @@ function renderStatsPanel(s, events) {
   const srcSub = m.inbox
     ? `${m.inbox.items} inbox items${m.inbox.backlog ? ` · ${m.inbox.backlog} still queued` : ''}`
     : [b.summarized_pages && `${b.summarized_pages} pages read`, b.fetched_pages && `${b.fetched_pages} fetched`, b.direct_pages && `${b.direct_pages} direct`, b.search_results && `${b.search_results} results`].filter(Boolean).join(' · ');
-  const durSub = [t.queue_ms > 1000 && `queued ${fmtMs(t.queue_ms)}`, t.late_ms > 1000 && `late ${fmtMs(t.late_ms)}`, t.notify_ms && `notify ${fmtMs(t.notify_ms)}`].filter(Boolean).join(' · ');
+  const durSub = [t.queue_ms > 1000 && `queued ${fmtMs(t.queue_ms)}`, t.late_ms > 1000 && `late ${fmtMs(t.late_ms)}`].filter(Boolean).join(' · ');
   const out = m.output || {};
   const synth = m.synth || {};
   const err = run.error;
@@ -2491,14 +2491,13 @@ function renderStatsPanel(s, events) {
     </div>${chart}`, `${h.samples} samples`);
   }
 
-  // Config / build / notify
+  // Config / build
   const cfg = by('config')[0];
   const kv = [];
   if (m.model) kv.push(['model', m.model]);
   if (m.build?.commit) kv.push(['code', m.build.commit + (m.build.dirty ? ' (uncommitted changes)' : '')]);
   if (run.trigger) kv.push(['trigger', run.trigger]);
   if (run.scheduled_for) kv.push(['scheduled', fmtTime(run.scheduled_for)]);
-  if (m.notify) kv.push(['notification', m.notify.sent ? `sent (HTTP ${m.notify.status}, ${fmtMs(m.notify.ms)})` : 'not sent']);
   if (cfg) {
     const env = cfg.data.env || {};
     for (const k of ['CONTEXT_BUDGET', 'NUM_CTX', 'SYNTHESIZER_MAX_TOKENS', 'TEMPERATURE', 'TIMEOUT']) if (env[k]) kv.push([k.toLowerCase(), env[k]]);

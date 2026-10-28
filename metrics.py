@@ -284,7 +284,7 @@ class RunRecorder:
         )
 
     def mark_ended(self) -> None:
-        """Pipeline done; what follows (notification) is timed separately."""
+        """Pipeline done."""
         self.run.setdefault("ended_at", _now())
 
     def flush(self) -> None:
@@ -300,7 +300,7 @@ class RunRecorder:
             print(f"[metrics] WARNING: could not write events ({type(e).__name__}: {e})")
 
     def evaluate(self, status: str, output: Optional[str], error: Optional[BaseException] = None) -> dict:
-        """Rollup + self-checks of everything recorded so far (used before notifying, then again at finish)."""
+        """Rollup + self-checks of everything recorded so far."""
         self.mark_ended()
         if error is not None and "error" not in self.run:
             self.run["error"] = {"type": type(error).__name__, "message": str(error)[:2000], "phase": self.current_phase}
@@ -577,12 +577,6 @@ def rollup(events: list[dict], run: dict, status: str, output: Optional[str],
         out["cited_sources"] = len(cited)
         out["citation_rate"] = round(len(cited) / len(source_urls), 3)
 
-    notify_ev = next((e for e in reversed(by_kind.get("notify", []))), None)
-    notify = {"sent": notify_ev["ok"], "status": notify_ev["data"].get("http_status"), "ms": notify_ev["duration_ms"],
-              "summary_ms": notify_ev["data"].get("summary_ms")} if notify_ev else None
-    if notify_ev:
-        timing["notify_ms"] = notify_ev["duration_ms"]
-
     recall_evs = by_kind.get("recall", [])
     recall = {
         "runs": max(e["data"].get("runs") or 0 for e in recall_evs),
@@ -614,7 +608,6 @@ def rollup(events: list[dict], run: dict, status: str, output: Optional[str],
         "synth": synth,
         "output": out,
         "recall": recall,
-        "notify": notify,
         "host": host,
         "planner_queries": sum(len(d.get("queries") or []) for d in decisions.get("planner", []) if not d.get("direct_sources")) or None,
         "validator": decisions.get("validator"),
@@ -697,18 +690,6 @@ def refresh_checks() -> int:
     if n:
         print(f"[metrics] self-checks added to {n} sessions")
     return n
-
-
-def problem_note(m: Optional[dict]) -> Optional[str]:
-    """One line for a notification when a run needs a look, else None."""
-    if not m:
-        return None
-    if m.get("status") == "error":
-        err = (m.get("run") or {}).get("error") or {}
-        return f"Failed: {err.get('type', 'error')}: {err.get('message', '')}"[:300]
-    if m.get("degraded"):
-        return "Degraded: " + "; ".join(c["detail"] for c in m["checks"])
-    return None
 
 
 # ── Backfill (runs recorded before metrics existed: parse their logs) ─────────

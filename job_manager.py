@@ -12,7 +12,6 @@ import os
 
 import db
 import metrics
-import notify
 from pipeline import MODEL, create_pipeline
 
 # Runs due while dispatch was down: the latest one is caught up if it was due within this window,
@@ -97,25 +96,6 @@ def _current_step(logs: str) -> Optional[str]:
             if prefix in line:
                 return step
     return None
-
-
-def _notify(client, session_id: int, title: str, result: Optional[str], verdict: Optional[dict]) -> None:
-    """Push summary + ntfy, recorded as one "notify" event of the run. Failed or empty runs send
-    only what went wrong; degraded runs lead with their self-check results."""
-    if not notify.ENABLED:
-        return
-    note = metrics.problem_note(verdict) if notify.ALERT_PROBLEMS else None
-    no_answer = (verdict or {}).get("status") in ("error", "empty")  # nothing worth summarizing
-    if no_answer and not note:
-        return
-    t0 = time.monotonic()
-    summary = "" if no_answer else notify.summarize(client, result, session_id)
-    summary_ms = int((time.monotonic() - t0) * 1000)
-    body = "\n\n".join(x for x in (note, summary) if x)
-    status, err = notify.send(title=("⚠ " if note else "") + title, body=body,
-                              tags=["warning"] if note else [], priority="high" if note else "default")
-    metrics.get(session_id).event("notify", "notify", title, start=t0, ok=status is not None and status < 400,
-                                  error=err, summary_ms=summary_ms, http_status=status, chars=len(body), alert=bool(note))
 
 
 def _run_status(answer: Optional[str], cancelled: bool) -> str:
@@ -334,7 +314,6 @@ class JobManager:
         from apscheduler.triggers.date import DateTrigger
         now = datetime.now(timezone.utc)
         until = now - timedelta(seconds=90)  # anything newer is APScheduler's to run
-        lines = []
         for d in dispatches:
             try:
                 if d.get("trigger_type") == "once":
@@ -364,15 +343,11 @@ class JobManager:
                     db.record_missed_run(d["id"], d["agent"], MODEL, d["prompt"], f.astimezone(timezone.utc).isoformat())
                 name = d.get("label") or d["agent"]
                 print(f"[dispatch] {name}: {len(fires)} run(s) missed while down" + (", catching up the latest" if catch else ""))
-                lines.append(f"{name}: {len(fires)} missed" + (" (caught up the latest)" if catch else ""))
                 if catch:
                     self.run_scheduled(d["id"], d["agent"], d["prompt"], trigger="catch_up",
                                        scheduled_for=latest.astimezone(timezone.utc).isoformat())
             except Exception as e:
                 print(f"[dispatch] catch-up check failed for dispatch {d.get('id')}: {type(e).__name__}: {e}")
-        if lines and notify.ALERT_PROBLEMS:
-            notify.send(title="⚠ dispatch missed runs", body="Dispatch was not running when these were due:\n" + "\n".join(lines),
-                        tags=["warning"], priority="high")
 
     def run_scheduled(self, dispatch_id: int, agent: str, prompt: str, trigger: str = "scheduled",
                       scheduled_for: Optional[str] = None) -> None:
@@ -442,9 +417,6 @@ class JobManager:
                         self.scheduler.remove_job(f"dispatch_{dispatch_id}")
                     except Exception:
                         pass
-                verdict = metrics.get(session_id).evaluate(_mstatus, answer, _exc)
-                if (_status == "done" and _result) or _mstatus == "error":
-                    _notify(self.client, session_id, agent, _result, verdict)
                 metrics.finish(session_id, _mstatus, answer, _exc)
 
         self._enqueue(job_id, _run)
@@ -499,8 +471,4 @@ class JobManager:
                 elif _err:
                     self._jobs[job_id]["error"] = _err
             db.end_session(session_id)
-            verdict = metrics.get(session_id).evaluate(_mstatus, answer, _exc)
-            if getattr(body, "dispatch_id", None):
-                if (_status == "done" and _result) or _mstatus == "error":
-                    _notify(self.client, session_id, agent_name, _result, verdict)
             metrics.finish(session_id, _mstatus, answer, _exc)
