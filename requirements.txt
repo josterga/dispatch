@@ -9,3 +9,4 @@ apscheduler
 ddgs
 pyyaml
 trafilatura
+lxml_html_clean  # needed by trafilatura (justext) with lxml >= 5.2

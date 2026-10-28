@@ -12,13 +12,6 @@ from pipeline import MODEL, OLLAMA_TIMEOUT, create_pipeline, AgentPipeline
 from providers import LLMClient
 
 
-def _check_api_key():
-    from tools import OLLAMA_API_KEY
-    if not OLLAMA_API_KEY:
-        print("Error: OLLAMA_API_KEY is not set.")
-        sys.exit(1)
-
-
 def _run_once(client, session_id, prompt, config):
     answer = create_pipeline(client, session_id, config).run(prompt)
     if answer is not None:
@@ -89,7 +82,6 @@ if __name__ == "__main__":
         uvicorn.run(app, host=host, port=port, timeout_keep_alive=600)
         sys.exit(0)
 
-    _check_api_key()
     agent_name = args.agent or "general"
     if agent_name not in registry:
         print(f"Unknown agent '{agent_name}'. Available: {', '.join(agent_names)}")
