@@ -69,6 +69,12 @@ Optional phases (enabled per-agent via config):
 - **Link validator** — HEAD-checks result URLs, drops dead ones before synthesis
 - **Ranker + Fetcher** — LLM selects top URLs → parallel web_fetch → per-page summarizer
 
+The synthesizer also gets two kinds of context so digests don't repeat themselves:
+- **Previous digests** of the same dispatch: continuing stories come back only as **Update:** lines when something changed.
+- **Already covered today**: lead lines from other dispatches' digests of the last 20 hours that share names and numbers with this run's research. A story another digest already covered is skipped, or kept to one line ending "(also in …)" when it's central to this digest.
+
+If the planner's output can't be parsed it retries once; if the synthesizer returns nothing it retries once on half the input. A run that still produces nothing says why (e.g. `[no result — the planner produced no search queries]`), and the reason is in its metrics (`run.empty_reason`).
+
 ## Adding a new agent
 
 **Option 1 — Web UI**
@@ -292,7 +298,7 @@ The web UI (`/`) is a single-page app: three tabs plus a **Config** menu, with t
 
 **Dashboard** — run stats per dispatch: run count, success rate, median duration, next run, and recent runs. Runs that fail their self-checks (empty output, errors, unusually slow) are flagged as degraded. Open a run to inspect its timing, sources, fetches, and every LLM call.
 
-**Ask** — chat about your digests. Pick a digest (or start from **Ask about this** on a run) and ask follow-ups; answers draw on your digests, and with **Research** on (the default) a message can also search the web and read pages. The **About me** setting tells it what's relevant to you.
+**Ask** — chat about your digests. Pick a digest (or start from **Ask about this** on a run) and ask follow-ups; answers draw on your digests, and with **Research** on (the default) a message can also search the web and read pages, or start a full **research run** (the dispatch pipeline on your question, fresh, with no digest context; it shows up in Runs with its sources). Ask it to track or follow a topic and it drafts a new agent, with an optional schedule, as a card you can edit and then create; nothing is created until you click. Agents and dispatches made this way are tagged `chat`. The **About me** setting tells it what's relevant to you.
 
 ### Config menu
 
@@ -437,7 +443,7 @@ run_payloads(id, session_id, seq, input, output, created_at)
 settings    (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)
 ```
 
-`source` in sessions is `dispatch` (scheduled), `http`, or `chat` (an Ask thread; its turns are `messages`). `sessions.metrics` holds the run's rollup; `run_events` / `run_payloads` hold every recorded event and full LLM inputs/outputs (payloads pruned after `PAYLOAD_RETENTION_DAYS`). `role` in messages is `user`, `assistant`, or `error`.
+`source` in sessions is `dispatch` (scheduled), `http`, or `chat` (an Ask thread; its turns are `messages`). `sessions.metrics` holds the run's rollup; `run_events` / `run_payloads` hold every recorded event and full LLM inputs/outputs (payloads pruned after `PAYLOAD_RETENTION_DAYS`). `role` in messages is `user`, `assistant`, `error`, or `proposal` (an agent drafted in an Ask thread, as JSON). Ask research runs have `source` `chat-research`.
 
 `dispatches.schedule` is a standard 5-field cron expression. Schedules are managed by APScheduler inside the server process and persist across restarts.
 

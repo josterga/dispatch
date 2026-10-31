@@ -203,6 +203,7 @@ body.theme-light .seg-btn.active { background: white; box-shadow: 0 1px 3px oklc
 
 /* ── Main ── */
 #main {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -378,6 +379,25 @@ body.theme-light .btn-primary { color: white !important; }
 
 /* ── Digest ── */
 .digest-list { padding: 20px 24px 80px; max-width: 880px; margin: 0 auto; }
+.digest-toolbar {
+  position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 8px;
+  margin: -20px -24px 12px; padding: 12px 24px 10px; background: var(--bg);
+  border-bottom: 1px solid transparent; transition: border-color 0.15s;
+}
+.digest-toolbar.stuck { border-bottom-color: var(--line); }
+#to-top {
+  position: absolute; right: 20px; bottom: 20px; z-index: 150;
+  width: 38px; height: 38px; border-radius: 50%; display: none; align-items: center; justify-content: center;
+  background: var(--panel); border: 1px solid var(--line); color: var(--fg); box-shadow: var(--shadow); cursor: pointer;
+}
+#to-top.show { display: inline-flex; }
+.ask-proposal { margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: var(--panel); display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.ask-proposal label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.05em; }
+.ask-proposal input, .ask-proposal textarea { font: inherit; font-size: 13px; text-transform: none; letter-spacing: 0; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; }
+.ask-proposal textarea { min-height: 70px; resize: vertical; }
+.ask-proposal .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.ask-proposal .row > label { flex: 1; min-width: 120px; }
+.ask-proposal .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .digest-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 14px; }
 .digest-card-hdr {
   padding: 14px 18px; display: flex; align-items: center; gap: 10px;
@@ -627,6 +647,8 @@ details.log-section summary::-webkit-details-marker { display: none; }
     border-radius: 16px 16px 0 0;
   }
   .digest-list { padding: 10px 14px 24px; }
+  .digest-toolbar { margin: -10px -14px 10px; padding: 10px 14px 8px; }
+  #to-top { right: 14px; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
   .digest-card-body { padding: 12px 16px 14px; }
   .digest-bullet { font-size: 13.5px; }
   .digest-card-hdr { flex-wrap: wrap; }
@@ -875,6 +897,9 @@ button.tag-chip.active { color: var(--fg); border-color: var(--accent); backgrou
 
     <!-- Content area -->
     <div id="content"></div>
+    <button id="to-top" title="Back to top" aria-label="Back to top" onclick="document.getElementById('content').scrollTo({ top: 0, behavior: 'smooth' })">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg>
+    </button>
 
     <!-- Mobile tab bar -->
     <nav id="mobile-tabbar">
@@ -1529,7 +1554,7 @@ function renderDigest() {
   }).join('');
 
   el.innerHTML = `<div class="digest-list">
-    <div style="display:flex;align-items:center;margin-bottom:12px;gap:8px">
+    <div class="digest-toolbar">
       <span class="meta-mono" style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em">${digestItems.length} item${digestItems.length !== 1 ? 's' : ''} · today</span>
       ${toggleBtn}
     </div>
@@ -1545,6 +1570,8 @@ function digestToggleAll() {
     digestOpenCards.clear();
   }
   renderDispatch();
+  // Collapsing from deep in the list: jump to the (now short) list instead of a blank scroll position.
+  if (!allCollapsed) document.getElementById('content')?.scrollTo({ top: 0 });
 }
 
 function digestToggleCard(id, event) {
@@ -1722,7 +1749,8 @@ function askTurns(t) {
   const turns = [];
   let cur = null;
   for (const m of t.messages) {
-    if (m.role === 'user') { cur = { q: m, a: null, steps: [] }; turns.push(cur); }
+    if (m.role === 'user') { cur = { q: m, a: null, steps: [], proposals: [] }; turns.push(cur); }
+    else if (cur && m.role === 'proposal') cur.proposals.push(m);
     else if (cur && !cur.a && (m.role === 'assistant' || m.role === 'error')) cur.a = m;
   }
   turns.forEach((tu, i) => {
@@ -1763,9 +1791,79 @@ function renderAskMessages() {
       const where = j.status === 'queued' ? `Waiting for the model${j.queue_position > 1 ? ` · ${j.queue_position - 1} ahead` : ''}${[...activeJobs.values()].some(x => x.status === 'running') ? ' (a dispatch run is using it)' : ''}…` : `${j.step || 'Thinking'}…`;
       answer = `<div class="ask-pending"><i class="run-dot"></i> ${esc(where)}</div>`;
     }
-    return `<div class="ask-turn"><div class="ask-q">${esc(tu.q.content)}</div>${steps}${answer}</div>`;
+    const proposals = tu.proposals.map(askProposalHTML).join('');
+    return `<div class="ask-turn"><div class="ask-q">${esc(tu.q.content)}</div>${steps}${answer}${proposals}</div>`;
   }).join('');
   if (atBottom || busy) box.scrollTop = box.scrollHeight;
+}
+
+// A drafted agent from the chat's propose_agent tool: editable, created only when the user clicks.
+function askProposalHTML(m) {
+  let p;
+  try { p = JSON.parse(m.content); } catch { return ''; }
+  const existing = allAgents.find(a => a.name === p.name);
+  if (existing) {
+    const d = allDispatches.find(c => c.agent === p.name);
+    return `<div class="ask-proposal"><div><strong>${esc(existing.label || p.name)}</strong> <span class="meta-mono">· agent created${d ? ` · scheduled ${esc(d.schedule)}` : ''}</span></div></div>`;
+  }
+  const id = `pp-${m.id}`;
+  const f = (k, label, v, area) => `<label>${label}${area
+    ? `<textarea id="${id}-${k}">${esc(v || '')}</textarea>`
+    : `<input id="${id}-${k}" value="${esc(v || '')}">`}</label>`;
+  return `<div class="ask-proposal" id="${id}">
+    <div><strong>Draft agent</strong> <span class="meta-mono">· not created yet: review, edit, then create</span></div>
+    <div class="row">${f('label', 'Label', p.label)}${f('name', 'Name (slug)', p.name)}</div>
+    ${f('description', 'Description', p.description)}
+    ${f('goal_template', 'Goal', p.goal_template, true)}
+    ${f('output_template', 'Output format', p.output_template, true)}
+    <div class="row">${f('sources', 'Sources (comma-separated)', (p.sources || []).join(', '))}${f('freshness', 'Freshness (d/w/m/y)', p.freshness)}${f('planner_query_count', 'Searches', p.planner_query_count)}</div>
+    <div class="row">${f('schedule', 'Schedule (cron, your time zone)', p.schedule)}${f('prompt', 'Prompt for each run (optional)', p.prompt)}</div>
+    <div class="actions">
+      <button class="btn btn-sm" onclick="askCreateProposal(${m.id}, false)">Create agent</button>
+      <button class="btn btn-sm" onclick="askCreateProposal(${m.id}, true)">Create &amp; schedule</button>
+      <label style="flex-direction:row;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-size:12px"><input type="checkbox" id="${id}-runnow" style="padding:0"> run once now</label>
+      <span class="meta-mono" id="${id}-status"></span>
+    </div>
+  </div>`;
+}
+
+async function askCreateProposal(msgId, schedule) {
+  const id = `pp-${msgId}`;
+  const val = k => (document.getElementById(`${id}-${k}`)?.value || '').trim();
+  const status = document.getElementById(`${id}-status`);
+  const say = t => { if (status) status.textContent = t; };
+  const name = val('name').toLowerCase();
+  const fresh = val('freshness');
+  const agent = {
+    name, label: val('label'), description: val('description'),
+    goal_template: val('goal_template'), output_template: val('output_template'),
+    sources: val('sources').split(',').map(x => x.trim()).filter(Boolean),
+    freshness: ['d', 'w', 'm', 'y'].includes(fresh) ? fresh : null,
+    planner_query_count: Math.max(3, Math.min(8, parseInt(val('planner_query_count'), 10) || 5)),
+    tool_bindings: ['web_search'], tags: ['chat'],
+  };
+  if (!agent.name || !agent.goal_template) { say('name and goal are required'); return; }
+  const cron = val('schedule');
+  if (schedule && !cron) { say('add a schedule first'); return; }
+  say('creating…');
+  const post = async (url, body) => {
+    const r = await fetch(url, { method: 'POST', headers: headers(), body: JSON.stringify(body) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `error ${r.status}`);
+    return r.json();
+  };
+  try {
+    await post('/api/agents', agent);
+    const runNow = document.getElementById(`${id}-runnow`)?.checked;
+    if (schedule || runNow) {
+      // Unscheduled "run once" = a one-off dispatch due in a few seconds, so the run has a dispatch to show up under.
+      await post('/api/dispatches', schedule
+        ? { agent: name, prompt: val('prompt'), schedule: cron, label: agent.label, run_on_create: !!runNow, timezone: BROWSER_TZ, tags: ['chat'] }
+        : { agent: name, prompt: val('prompt'), schedule: new Date(Date.now() + 15000).toISOString().replace('Z', '+00:00'), trigger_type: 'once', label: agent.label, timezone: BROWSER_TZ, tags: ['chat'] });
+    }
+    setStatus(schedule ? `created and scheduled: ${agent.label}` : `created: ${agent.label}`);
+    await Promise.all([loadAgents(), loadDispatches()]);
+    renderAskMessages();
+  } catch (e) { say(String(e.message || e)); }
 }
 
 async function askSend() {
@@ -2847,6 +2945,22 @@ function renderActiveRows() {
   }).join('') || `<tr><td colspan="9" class="meta" style="padding:16px">No matches.</td></tr>`;
 }
 
+// ── Scroll aids: back-to-top button, sticky digest toolbar edge ──
+function initScrollAids() {
+  const content = document.getElementById('content');
+  const top = document.getElementById('to-top');
+  if (!content || !top) return;
+  let raf = 0;
+  content.addEventListener('scroll', () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      top.classList.toggle('show', content.scrollTop > 600);
+      document.querySelector('.digest-toolbar')?.classList.toggle('stuck', content.scrollTop > 8);
+    });
+  }, { passive: true });
+}
+
 // ── Sidebar collapse ──
 function setSidebarCollapsed(collapsed) {
   document.getElementById('app').classList.toggle('sb-collapsed', collapsed);
@@ -3796,6 +3910,7 @@ document.addEventListener('keydown', e => {
   if (!isDark) document.body.classList.add('theme-light');
   updateThemeBtn();
   try { if (localStorage.getItem('dispatch-sidebar-collapsed') === '1') document.getElementById('app').classList.add('sb-collapsed'); } catch {}
+  initScrollAids();
 
   try {
     const v = localStorage.getItem('dispatch-dispatches-view');

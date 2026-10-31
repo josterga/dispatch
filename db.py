@@ -516,6 +516,23 @@ def recent_outputs(dispatch_id: int, n: int, before_session: Optional[int] = Non
     return [dict(r) for r in rows]
 
 
+def latest_outputs_since(since: str, exclude_dispatch: Optional[int] = None) -> list[dict]:
+    """Each dispatch's latest done run that started at or after `since` (ISO UTC): {dispatch_id, id, started_at, content}."""
+    rows = _get_conn().execute(
+        f"""SELECT * FROM (
+                SELECT s.dispatch_id, s.id, s.started_at,
+                       (SELECT content FROM messages WHERE session_id = s.id AND role = 'assistant' ORDER BY id DESC LIMIT 1) AS content,
+                       ROW_NUMBER() OVER (PARTITION BY s.dispatch_id ORDER BY s.started_at DESC, s.id DESC) AS rn
+                FROM sessions s
+                WHERE s.dispatch_id IS NOT NULL AND s.dispatch_id IS NOT ? AND s.started_at >= ? AND s.ended_at IS NOT NULL
+                      AND {_DONE_RUN})
+            WHERE rn = 1 AND content IS NOT NULL AND content != '' AND content NOT LIKE '[no result%'
+            ORDER BY started_at""",
+        (exclude_dispatch, since),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def session_dispatch_id(session_id: int) -> Optional[int]:
     row = _get_conn().execute("SELECT dispatch_id FROM sessions WHERE id = ?", (session_id,)).fetchone()
     return row["dispatch_id"] if row else None

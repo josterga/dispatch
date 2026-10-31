@@ -104,16 +104,35 @@ PREVIOUS DIGESTS of this same dispatch (most recent first) — what the reader h
 
 How to use them:
 - Research items marked "previously_reported" were already covered. Include such an item again only if the research shows something new about it; then start the line with **Update:** and say what changed.
-- Start genuinely new items with **New:**.
+- The same story often comes back in a new article. Don't repeat a story the previous digests already told just because new research mentions it: include it only if something changed, as an **Update:**.
+- New items need no marker: anything without **Update:** is new.
 - If an earlier digest had action items or urgent items, say whether the research shows them resolved, still open, or nothing new.
 - If a section has nothing new since the previous digest, write one line saying so instead of repeating old items.
 - Never cite a URL only because it appears in the previous digests: cite only URLs present in the research."""
+
+# Appended to the synthesizer/aggregator system prompt: other dispatches' digests from today (cross-dispatch dedupe).
+PROMPT_ELSEWHERE = """
+
+ALREADY COVERED TODAY in the reader's other digests (lead lines, by digest):
+{elsewhere}
+
+How to use it:
+- If an item in the research is the same story as one above, include it only if it is central to this digest's topic; then keep it to one line ending "(also in <digest name>)".
+- Otherwise leave it out, and count it in the Skipped line if there is one.
+- Never drop items that belong in sections such as Vendor watch, Act on, Urgent or Could involve me: those are always kept in full.
+- This list is context only: never cite it or take facts from it."""
 
 # Added to the planner prompt when the dispatch has an earlier digest.
 PROMPT_PLANNER_PREVIOUS = """
 
 Already covered in the previous digest ({when}): {headings}
 Prefer queries that find what is new since then, or follow up on developing stories, over repeating the same coverage."""
+
+
+# Added to the planner prompt on its one retry, after output that parsed to no queries.
+PROMPT_PLANNER_STRICT = """
+
+Your previous answer could not be used. Return exactly ONE JSON array of strings on a single line, like ["query one", "query two"]: no other text."""
 
 
 # Digest chat (chat.py). {catalog} = digests.catalog(); {research} / {focus} filled per turn.
@@ -124,6 +143,7 @@ Below is the CATALOG: every dispatch with its latest run and that run's section 
 - read_section: one section (like "Act on" or "Top stories") from every latest digest; use it for questions across all digests instead of opening each one
 - run_sources: the sources a run read before writing its digest (titles, URLs, snippets)
 - search_digests: find a topic across all digests from the last two weeks
+- propose_agent: draft a new recurring brief when the user wants to track, watch or follow something regularly, or asks for a new agent or dispatch. Ask at most one question first if the topic or cadence is unclear; otherwise draft it, with a goal written for a researcher and an output format with ## sections and a word limit. It is shown to the user to confirm: never say it was created.
 {research}
 Rules:
 - Answer from the digests. Name the dispatch and run date you used, and keep source URLs from the digests.
@@ -136,6 +156,7 @@ CATALOG:
 {catalog}"""
 
 PROMPT_CHAT_RESEARCH = """- web_search / web_fetch: the web. Look in the digests first; use the web when the question is about current status ("is it out yet", "latest", "now"), or when the digests don't cover it or only partly answer it. Don't search when the digests fully answer it. Say which parts came from the web (with URLs) and which from the digests.
+- research_run: a full, fresh research pass (several searches, a sourced brief; takes a few minutes). Use it when the user asks you to research something, or for a broad topic the digests don't cover; for a quick fact use web_search. Mention the run so they can open its sources.
 """
 
 PROMPT_CHAT_OFFER = " Then offer to look it up on the web: the user can turn on Research for the next message."

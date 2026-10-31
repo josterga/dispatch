@@ -12,7 +12,7 @@ import os
 
 import db
 import metrics
-from pipeline import MODEL, create_pipeline
+from pipeline import MODEL, create_pipeline, empty_result_text
 
 # Runs due while dispatch was down: the latest one is caught up if it was due within this window,
 # the rest are recorded as missed. 0 = never catch up (only record).
@@ -100,6 +100,53 @@ def _current_step(logs: str) -> Optional[str]:
 
 def _run_status(answer: Optional[str], cancelled: bool) -> str:
     return "cancelled" if cancelled else "done" if answer else "empty"
+
+
+def execute_pipeline(client, session_id: int, config, query: str, cancel_event, on_tee=None) -> dict:
+    """Run one pipeline in a session: stdout teed into the session's logs, output (or error) logged as a message.
+
+    Returns {status, result, error, answer, exc, mstatus}. The caller starts/finishes metrics and ends the session.
+    """
+    tee = TeeStream(sys.stdout, flush_cb=lambda logs: db.set_session_logs(session_id, logs))
+    sys.stdout = tee
+    if on_tee:
+        on_tee(tee)
+    out = {"status": "error", "result": None, "error": None, "answer": None, "exc": None, "mstatus": "error"}
+    try:
+        pipeline = create_pipeline(client, session_id, config, cancel_event)
+        answer = pipeline.run(query)
+        cancelled = bool(cancel_event and cancel_event.is_set())
+        out.update(answer=answer, status="cancelled" if cancelled else "done", mstatus=_run_status(answer, cancelled))
+        if not answer:
+            reason = getattr(pipeline, "empty_reason", None)
+            rec = metrics.get(session_id)
+            if reason and isinstance(getattr(rec, "run", None), dict):
+                rec.run["empty_reason"] = reason
+        out["result"] = answer if answer else empty_result_text(pipeline)
+        if not cancelled:
+            db.log_message(session_id, "assistant", out["result"])
+    except Exception as e:
+        out.update(exc=e, error=str(e))
+        db.log_message(session_id, "error", str(e))
+    finally:
+        sys.stdout = tee.original
+        db.set_session_logs(session_id, tee.getvalue())
+    return out
+
+
+def run_research_session(client, config, query: str, cancel_event=None, agent: str = "adhoc",
+                         source: str = "chat-research") -> tuple[int, Optional[str]]:
+    """Run a pipeline right here (not queued): for callers already holding the model slot, like a chat turn.
+
+    Creates its own session so the run, its sources and metrics show up like any other run. Returns (session_id, answer).
+    """
+    session_id = db.start_session(MODEL, agent=agent, source=source)
+    db.log_message(session_id, "user", query)
+    metrics.start(session_id, source, queued_at=datetime.now(timezone.utc).isoformat())
+    out = execute_pipeline(client, session_id, config, query, cancel_event)
+    db.end_session(session_id)
+    metrics.finish(session_id, out["mstatus"], out["answer"], out["exc"])
+    return session_id, out["answer"]
 
 
 class JobManager:
@@ -381,27 +428,13 @@ class JobManager:
         def _run():
             metrics.start(session_id, trigger, queued_at=self._jobs[job_id]["started_at"],
                           scheduled_for=scheduled_for, dispatch_id=dispatch_id)
-            tee = TeeStream(sys.stdout, flush_cb=lambda logs: db.set_session_logs(session_id, logs))
-            sys.stdout = tee
-            with self._lock:
-                self._jobs[job_id]["tee"] = tee
-            _status, _result, _err = "error", None, None
-            answer, _exc, _mstatus = None, None, "error"
+            out = {"status": "error", "result": None, "error": None, "answer": None, "exc": None, "mstatus": "error"}
             try:
-                pipeline = create_pipeline(self.client, session_id, self.pipeline_configs[agent_name], cancel_event)
-                answer = pipeline.run(prompt)
-                _status = "cancelled" if cancel_event.is_set() else "done"
-                _mstatus = _run_status(answer, cancel_event.is_set())
-                _result = answer if answer else "[no result — pipeline returned empty]"
-                if _status != "cancelled":
-                    db.log_message(session_id, "assistant", _result)
-            except Exception as e:
-                _exc = e
-                _err = str(e)
-                db.log_message(session_id, "error", _err)
+                out = execute_pipeline(self.client, session_id, self.pipeline_configs[agent_name], prompt, cancel_event,
+                                       on_tee=self._tee_setter(job_id))
             finally:
-                sys.stdout = tee.original
-                db.set_session_logs(session_id, tee.getvalue())
+                _status, _result, _err = out["status"], out["result"], out["error"]
+                answer, _exc, _mstatus = out["answer"], out["exc"], out["mstatus"]
                 with self._lock:
                     self._jobs[job_id]["status"] = _status
                     self._jobs[job_id]["finished_at"] = time.monotonic()
@@ -423,6 +456,12 @@ class JobManager:
 
     # ── Internal execution ────────────────────────────────────────────────────
 
+    def _tee_setter(self, job_id: str):
+        def _set(tee) -> None:
+            with self._lock:
+                self._jobs[job_id]["tee"] = tee
+        return _set
+
     def _execute_http(self, job_id: str, body, cancel_event, session_id, agent_name, inline_config=None):
         if agent_name is None:
             agent_name = "inline" if inline_config else (
@@ -439,29 +478,14 @@ class JobManager:
         metrics.start(session_id, "manual" if getattr(body, "dispatch_id", None) else "http",
                       queued_at=self._jobs[job_id]["started_at"], dispatch_id=getattr(body, "dispatch_id", None))
 
-        tee = TeeStream(sys.stdout, flush_cb=lambda logs: db.set_session_logs(session_id, logs))
-        sys.stdout = tee
-        with self._lock:
-            self._jobs[job_id]["tee"] = tee
-        _status, _result, _err = "error", None, None
-        answer, _exc, _mstatus = None, None, "error"
+        out = {"status": "error", "result": None, "error": None, "answer": None, "exc": None, "mstatus": "error"}
         try:
             query = next((m.content for m in reversed(body.messages) if m.role == "user"), "")
             config = inline_config or self.pipeline_configs.get(agent_name)
-            pipeline = create_pipeline(self.client, session_id, config, cancel_event)
-            answer = pipeline.run(query)
-            _status = "cancelled" if cancel_event.is_set() else "done"
-            _mstatus = _run_status(answer, cancel_event.is_set())
-            _result = answer if answer else "[no result — pipeline returned empty]"
-            if _status != "cancelled":
-                db.log_message(session_id, "assistant", _result)
-        except Exception as e:
-            _exc = e
-            _err = str(e)
-            db.log_message(session_id, "error", _err)
+            out = execute_pipeline(self.client, session_id, config, query, cancel_event, on_tee=self._tee_setter(job_id))
         finally:
-            sys.stdout = tee.original
-            db.set_session_logs(session_id, tee.getvalue())
+            _status, _result, _err = out["status"], out["result"], out["error"]
+            answer, _exc, _mstatus = out["answer"], out["exc"], out["mstatus"]
             with self._lock:
                 self._jobs[job_id]["status"] = _status
                 self._jobs[job_id]["finished_at"] = time.monotonic()

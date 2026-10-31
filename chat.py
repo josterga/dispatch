@@ -6,6 +6,8 @@
   Layer 2  run_sources: what that run read                             digests.run_sources()
   lateral  search_digests: keyword search over two weeks of digests    db.search_outputs()
   Layer 3  web_search / web_fetch, only for turns with Research on     tools.dispatch_tool()
+           research_run: a full research pipeline run, fresh (no digest context), Research on only
+  propose_agent: drafts an agent (+ optional schedule) for the user to confirm in the UI; never writes one itself
 
 A thread is a sessions row (source 'chat'); turns are messages, tool steps are tool_calls.
 A turn runs as a JobManager job (job_manager.submit_chat), so it shares the single model slot.
@@ -18,6 +20,7 @@ from typing import Callable, Optional
 
 import db
 import digests
+from agent_config import DomainConfig
 from pipeline import run_agent
 from prompts import PROMPT_CHAT, PROMPT_CHAT_OFFER, PROMPT_CHAT_RESEARCH
 from tools import TOOLS, dispatch_tool
@@ -29,6 +32,18 @@ HISTORY_TURNS = 6           # earlier Q&A pairs sent with each turn
 MAX_SOURCES = 40
 SECTION_MAX_CHARS = 1500    # one section in read_section
 TURN_READ_BUDGET = 40000    # tool-output chars per answer; past it read_digest returns an outline (keeps the 32k context safe)
+RESEARCH_MAX_CHARS = 6000   # one research_run result
+RESEARCH_OUTPUT = """Markdown, under 500 words. Only use the research provided; never invent facts, names, numbers, dates or URLs.
+
+## Answer
+The direct answer in 2-4 sentences, with sources.
+
+## Details
+Up to 8 supporting points, one line each with (source: URL).
+
+## Open questions
+One line on anything the research could not confirm. Skip if none."""
+_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,40}$")
 
 
 def _fn(name: str, description: str, props: dict, required: list[str]) -> dict:
@@ -50,6 +65,28 @@ DIGEST_TOOLS = [
         {"query": {"type": "string", "description": "1-4 distinctive words"},
          "days": {"type": "integer", "description": "How far back, default 14"}}, ["query"]),
 ]
+RESEARCH_TOOL = _fn(
+    "research_run", "Run a full research pass on a question: plans several searches, reads the results and writes a "
+    "sourced brief. Slower (a few minutes) but more thorough than web_search. Use it when the user asks to research "
+    "something, or for a broad or new topic their digests don't cover; use web_search for a quick lookup.",
+    {"question": {"type": "string", "description": "What to research, as a full sentence"},
+     "freshness": {"type": "string", "enum": ["d", "w", "m", "y"], "description": "Only results from the last day/week/month/year"}},
+    ["question"])
+PROPOSE_TOOL = _fn(
+    "propose_agent", "Draft a new dispatch agent (a recurring research brief) from the conversation and show it to the "
+    "user, who reviews, edits and creates it. It is not created until they confirm. Use it when the user wants to "
+    "track, watch or follow a topic regularly, or asks for a new agent or dispatch.",
+    {"name": {"type": "string", "description": "Slug: lowercase letters, digits, dashes (e.g. bay-housing)"},
+     "label": {"type": "string", "description": "Display name, e.g. 'Bay Area housing'"},
+     "description": {"type": "string", "description": "One line: what it covers"},
+     "goal_template": {"type": "string", "description": "What to find, written to the researcher: topics, angles, what matters to the user"},
+     "output_template": {"type": "string", "description": "Markdown format: word limit and ## sections, each with what goes in it and (source: URL)"},
+     "sources": {"type": "array", "items": {"type": "string"}, "description": "Domains to favour, e.g. sfchronicle.com"},
+     "freshness": {"type": "string", "enum": ["d", "w", "m", "y"], "description": "d for daily briefs, w for weekly"},
+     "planner_query_count": {"type": "integer", "description": "Searches per run, 3-8 (default 5)"},
+     "schedule": {"type": "string", "description": "Optional cron in the user's time zone, e.g. '30 7 * * *' (7:30 daily), '0 9 * * 1' (Mondays 9:00)"},
+     "prompt": {"type": "string", "description": "Optional extra instruction for each scheduled run"}},
+    ["name", "label", "goal_template", "output_template"])
 _LOCAL = {t["function"]["name"] for t in DIGEST_TOOLS}
 _WEB = {t["function"]["name"] for t in TOOLS}
 
@@ -147,6 +184,59 @@ def search_digests(query, days=14) -> dict:
     return {"query": query, "hits": hits} if hits else {"query": query, "hits": [], "note": "No digest mentions all of these words."}
 
 
+def research_run(client, question, freshness=None, cancel_event=None) -> dict:
+    """A fresh pipeline run on the question, inline in this turn (the chat already holds the model slot)."""
+    import job_manager
+    question = str(question or "").strip()
+    if not question:
+        return {"error": "Give a question to research."}
+    config = DomainConfig(
+        agent_name="adhoc", goal_template=question, output_template=RESEARCH_OUTPUT,
+        tool_bindings=["web_search"], planner_query_count=4, max_validator_loops=1,
+        freshness=freshness if freshness in ("d", "w", "m", "y") else None, recall_runs=0, dedupe_today=False,
+    )
+    run_id, answer = job_manager.run_research_session(client, config, question, cancel_event)
+    if not answer:
+        return {"run_id": run_id, "error": "The research run produced no result.", "output": db.get_output(run_id)}
+    cut = answer[:RESEARCH_MAX_CHARS] + ("\n[… cut]" if len(answer) > RESEARCH_MAX_CHARS else "")
+    return {"run_id": run_id, "brief": cut,
+            "note": "Fresh research run (not from the digests). Cite its URLs; the user can open the run to see its sources."}
+
+
+def propose_agent(chat_id: int, args: dict) -> dict:
+    """Validate a drafted agent and store it as a 'proposal' message for the UI to confirm. Never creates anything."""
+    from job_manager import cron_trigger
+    name = str(args.get("name") or "").strip().lower()
+    problems = []
+    if not _SLUG_RE.match(name):
+        problems.append("name must be a slug: 2-41 lowercase letters, digits or dashes")
+    elif db.get_agent(name):
+        problems.append(f"an agent named '{name}' already exists: pick another name")
+    for f in ("label", "goal_template", "output_template"):
+        if not str(args.get(f) or "").strip():
+            problems.append(f"{f} is required")
+    schedule = str(args.get("schedule") or "").strip()
+    if schedule:
+        try:
+            cron_trigger(schedule, db.local_timezone())
+        except Exception:
+            problems.append(f"schedule '{schedule}' is not a valid 5-field cron")
+    if problems:
+        return {"error": "Fix and call propose_agent again: " + "; ".join(problems)}
+    freshness = args.get("freshness") if args.get("freshness") in ("d", "w", "m", "y") else None
+    proposal = {
+        "name": name, "label": str(args["label"]).strip(), "description": str(args.get("description") or "").strip(),
+        "goal_template": str(args["goal_template"]).strip(), "output_template": str(args["output_template"]).strip(),
+        "sources": [str(x).strip() for x in (args.get("sources") or []) if str(x).strip()][:15],
+        "freshness": freshness,
+        "planner_query_count": max(3, min(8, _int(args.get("planner_query_count"), 5))),
+        "schedule": schedule or None, "prompt": str(args.get("prompt") or "").strip(),
+    }
+    db.log_message(chat_id, "proposal", json.dumps(proposal))
+    return {"shown": True, "note": "The draft is shown to the user as a card they can edit, then create (and schedule). "
+            "It does not exist yet. Briefly say what you drafted and that they can adjust it before creating it."}
+
+
 def step_label(name: str, args: dict, labels: Optional[dict] = None) -> str:
     """Short human label for a tool step ("read World, 1 run back")."""
     labels = labels if labels is not None else _labels()
@@ -163,10 +253,14 @@ def step_label(name: str, args: dict, labels: Optional[dict] = None) -> str:
         return f"web: {args.get('query')}"
     if name == "web_fetch":
         return f"page: {args.get('url')}"
+    if name == "research_run":
+        return f"research run: {args.get('question')}"
+    if name == "propose_agent":
+        return f"drafted agent: {args.get('label') or args.get('name')}"
     return name
 
 
-def _router(research: bool, on_step: Optional[Callable[[str], None]]):
+def _router(research: bool, on_step: Optional[Callable[[str], None]], client=None, cancel_event=None):
     labels = _labels()
     used = {"chars": 0}
 
@@ -174,13 +268,20 @@ def _router(research: bool, on_step: Optional[Callable[[str], None]]):
         args = args if isinstance(args, dict) else {}
         if on_step:
             on_step(step_label(name, args, labels))
-        if name in _WEB:
+        if name in _WEB or name == "research_run":
             if not research:
                 return {"error": "Research is off for this message. Tell the user they can turn it on to search the web."}
-            return dispatch_tool(name, args, session_id)
+            if name in _WEB:
+                return dispatch_tool(name, args, session_id)
         t0 = time.monotonic()
         try:
-            if name == "read_digest":
+            if name == "research_run":
+                if on_step:
+                    on_step("running research (a few minutes)")
+                result = research_run(client, args.get("question"), args.get("freshness"), cancel_event)
+            elif name == "propose_agent":
+                result = propose_agent(session_id, args)
+            elif name == "read_digest":
                 result = read_digest(args.get("dispatch_id"), args.get("runs_back", 0))
                 if used["chars"] > TURN_READ_BUDGET and "digest" in result:
                     result["digest"] = digests.outline(result["digest"], max_chars=1500)
@@ -205,13 +306,22 @@ def _history(chat: dict) -> list[dict]:
     """Earlier turns as plain messages; each answer carries a one-line note of what it opened, not the tool output."""
     msgs, steps = chat["messages"], chat["steps"]
     labels = _labels()
-    turns, q = [], None
+    turns, q, proposed = [], None, []
     for m in msgs:
         if m["role"] == "user":
-            q = m
+            q, proposed = m, []
+        elif m["role"] == "proposal" and q:
+            try:
+                p = json.loads(m["content"])
+                created = " (created)" if db.get_agent(p.get("name", "")) else " (not created yet)"
+                proposed.append(f"{p.get('label')} [{p.get('name')}]{created}")
+            except (ValueError, TypeError):
+                pass
         elif m["role"] == "assistant" and q:
             opened = [step_label(s["tool_name"], s["args"], labels) for s in steps if q["created_at"] <= s["created_at"] <= m["created_at"]]
             note = f"\n\n[Opened for this answer: {'; '.join(opened)}]" if opened else ""
+            if proposed:
+                note += f"\n[Drafted agents: {'; '.join(proposed)}]"
             turns.append([{"role": "user", "content": q["content"]}, {"role": "assistant", "content": m["content"] + note}])
             q = None
     return [m for t in turns[-HISTORY_TURNS:] for m in t]
@@ -243,12 +353,12 @@ def run_turn(client, chat_id: int, question: str, research: bool = False,
         focus=_focus_block(chat),
         catalog=digests.catalog(),
     )
-    tools = DIGEST_TOOLS + (TOOLS if research else [])
+    tools = DIGEST_TOOLS + [PROPOSE_TOOL] + (TOOLS + [RESEARCH_TOOL] if research else [])
     if on_step:
         on_step("thinking")
     answer = run_agent(client, history + [{"role": "user", "content": question}], chat_id,
                        tools=tools, system_prompt=system, cancel_event=cancel_event, think=False,
-                       max_iterations=MAX_ITERATIONS, phase="chat", tool_router=_router(research, on_step))
+                       max_iterations=MAX_ITERATIONS, phase="chat", tool_router=_router(research, on_step, client, cancel_event))
     if not answer:
         db.log_message(chat_id, "error", "Cancelled." if cancel_event and cancel_event.is_set() else "No answer: the model call failed.")
     return answer

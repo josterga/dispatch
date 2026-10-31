@@ -4,6 +4,7 @@
   outline()       a digest cut down to headings + short lines, URLs kept whole
   urls()          URLs a digest cites
   run_sources()   Layer 2: what a run read (titles, URLs, snippets), from its synthesizer payloads
+  covered_today() other dispatches' digests from today, as lead lines (cross-dispatch dedupe)
 """
 import json
 import re
@@ -190,3 +191,85 @@ def previous_digests(session_id: int, n: int, max_chars: int = 6000) -> Optional
     block = "\n\n".join(parts)
     return {"block": block, "urls": seen_urls, "headings": headings(prev[0]["content"]),
             "when": _local(prev[0]["started_at"]), "runs": len(prev), "chars": len(block)}
+
+
+_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(.*)$")
+_MARKER_RE = re.compile(r"\*\*(?:New|Update):\*\*\s*|^(?:New|Update):\s*|\*\*|__")
+_SOURCE_RE = re.compile(r"\(\s*sources?:[^)]*\)|https?://\S+", re.I)
+_EMPTY_ITEM_RE = re.compile(r"^(nothing|none|no (?:new|matches|items|signals|threads|events))\b", re.I)
+
+
+def item_leads(text: Optional[str], width: int = 110) -> list[str]:
+    """Each list item of a digest cut to its lead clause: markers, sources and URLs stripped."""
+    out: list[str] = []
+    for line in (text or "").splitlines():
+        m = _ITEM_RE.match(line)
+        if not m:
+            continue
+        lead = _SOURCE_RE.sub("", _MARKER_RE.sub("", _MARKER_RE.sub("", m.group(1))))
+        lead = re.split(r"(?<=[.!?])\s", " ".join(lead.split()), maxsplit=1)[0].strip(" .;:-")
+        if len(lead) < 12 or _EMPTY_ITEM_RE.match(lead):
+            continue
+        out.append(lead if len(lead) <= width else lead[:width].rsplit(" ", 1)[0] + "…")
+    return out
+
+
+_KEY_RE = re.compile(r"\b(?:[A-Z][\w'&.-]{2,}|\d[\d.,%$]*\d|[A-Z]{2,})\b")
+_COMMON = {"the", "this", "that", "new", "update", "reddit", "today", "with", "from", "after", "over", "says", "said",
+           "will", "has", "have", "for", "and", "its", "into", "about", "more", "than", "amid", "following", "according",
+           "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november",
+           "december", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "president",
+           "government", "world", "us", "uk", "eu", "u.s", "pc", "ai", "state", "city", "county", "report", "reports"}
+_YEAR_RE = re.compile(r"^(?:19|20)\d\d$")
+
+
+def key_terms(text: Optional[str]) -> set[str]:
+    """Names, acronyms and numbers in a text, lowercased: what two items about the same story share."""
+    terms = {t.lower().strip(".,") for t in _KEY_RE.findall(text or "")} - _COMMON
+    return {t for t in terms if len(t) > 1 and not _YEAR_RE.match(t)}
+
+
+def _overlaps(lead_terms: set[str], research: set[str], min_shared: int) -> bool:
+    """Same story, probably: enough of the lead's names/numbers appear in the research, and most of them do."""
+    shared = len(lead_terms & research)
+    return shared >= min_shared and shared >= 0.6 * len(lead_terms)
+
+
+def covered_today(session_id: int, against: Optional[str] = None, hours: int = 20, max_chars: int = 2500,
+                  min_shared: int = 2) -> Optional[dict]:
+    """Other dispatches' latest digests from the last `hours`, as lead lines grouped by dispatch (cross-dispatch dedupe).
+
+    With `against` (this run's research), only leads sharing at least `min_shared` key terms with it are kept, so the
+    block lists likely overlaps instead of everything. {block, digests: [label…], items, chars}, or None.
+    """
+    own = db.session_dispatch_id(session_id)
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    rows = db.latest_outputs_since(since, exclude_dispatch=own)
+    if not rows:
+        return None
+    labels = {d["id"]: d.get("label") or d["agent"] for d in db.get_dispatches()}
+    per = max(300, max_chars // len(rows))
+    parts, names, items = [], [], 0
+    research = key_terms(against) if against else None
+    for r in rows:
+        leads = item_leads(r["content"])
+        if research is not None:
+            leads = [l for l in leads if _overlaps(key_terms(l), research, min_shared)]
+        if not leads:
+            continue
+        label = labels.get(r["dispatch_id"], f"dispatch {r['dispatch_id']}")
+        lines, size = [], 0
+        for lead in leads:
+            if size + len(lead) + 3 > per:
+                break
+            lines.append(f"- {lead}")
+            size += len(lead) + 3
+        parts.append(f"[{label}]\n" + "\n".join(lines))
+        names.append(label)
+        items += len(lines)
+    if not parts:
+        return None
+    block = "\n".join(parts)
+    if len(block) > max_chars:
+        block = block[:max_chars].rsplit("\n", 1)[0] + "\n[…]"
+    return {"block": block, "digests": names, "items": items, "chars": len(block)}

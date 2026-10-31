@@ -17,7 +17,8 @@ from agent_config import SubQueryConfig, DomainConfig
 from prompts import (
     PROMPT_PLANNER, PROMPT_RANKER, PROMPT_VALIDATOR,
     PROMPT_PAGE_SUMMARIZER, PROMPT_SYNTHESIZER,
-    PROMPT_AGGREGATOR, PROMPT_PREVIOUS, PROMPT_PLANNER_PREVIOUS, _FRESHNESS_LABELS,
+    PROMPT_AGGREGATOR, PROMPT_PREVIOUS, PROMPT_PLANNER_PREVIOUS, PROMPT_PLANNER_STRICT, PROMPT_ELSEWHERE,
+    _FRESHNESS_LABELS,
 )
 from tools import TOOLS, call_web_search, call_web_fetch, dispatch_tool
 
@@ -228,6 +229,25 @@ def _parse_json_output(text: Optional[str], fallback: dict) -> dict:
             return result
     except (json.JSONDecodeError, ValueError):
         pass
+    # Several JSON arrays in a row (one per line, or "][" glued): merge them into one list
+    merged: list = []
+    decoder = json.JSONDecoder()
+    pos, found = 0, 0
+    while True:
+        start = stripped.find('[', pos)
+        if start == -1:
+            break
+        try:
+            value, end = decoder.raw_decode(stripped, start)
+        except (json.JSONDecodeError, ValueError):
+            pos = start + 1
+            continue
+        if isinstance(value, list):
+            merged.extend(value)
+            found += 1
+        pos = end
+    if found > 1:
+        return merged
     # Extract the first [...] array from the text
     start = stripped.find('[')
     end = stripped.rfind(']')
@@ -251,6 +271,30 @@ def _parse_json_output(text: Optional[str], fallback: dict) -> dict:
     return fallback
 
 
+def _query_list(parsed) -> list[str]:
+    """Planner output → list of query strings (a dict's values count too)."""
+    if isinstance(parsed, dict):
+        parsed = list(parsed.values())
+    if not isinstance(parsed, list):
+        return []
+    return [q.strip() for q in parsed if isinstance(q, str) and q.strip()]
+
+
+# Why a run produced no digest (AgentPipeline.empty_reason) → the text saved as the run's output.
+EMPTY_REASONS = {
+    "no_queries": "the planner produced no search queries",
+    "no_research": "no research was collected",
+    "synth_failed": "the synthesizer returned no output",
+    "no_sub_results": "no sub-search returned results",
+    "aggregator_failed": "the aggregator returned no output",
+}
+
+
+def empty_result_text(pipeline) -> str:
+    reason = getattr(pipeline, "empty_reason", None)
+    return f"[no result — {EMPTY_REASONS.get(reason, 'pipeline returned empty')}]"
+
+
 def _load_previous(session_id: int, config: DomainConfig) -> Optional[dict]:
     """Earlier digests of this run's dispatch (previous-run awareness), or None. Never fails the run."""
     try:
@@ -261,6 +305,22 @@ def _load_previous(session_id: int, config: DomainConfig) -> Optional[dict]:
     if prev:
         print(f"[pipeline] recall: {prev['runs']} previous digest(s), {prev['chars']} chars, {len(prev['urls'])} URLs")
     return prev
+
+
+def _load_elsewhere(session_id: int, config: DomainConfig, against: str) -> Optional[dict]:
+    """Other dispatches' digests from today (cross-dispatch dedupe), or None. Never fails the run."""
+    if not getattr(config, "dedupe_today", True):
+        return None
+    try:
+        other = digests.covered_today(session_id, against=against)
+    except Exception as e:
+        print(f"[pipeline] elsewhere: WARNING: could not load today's other digests ({type(e).__name__}: {e})")
+        return None
+    if other:
+        print(f"[pipeline] elsewhere: {len(other['digests'])} other digest(s) today, {other['items']} items, {other['chars']} chars")
+        metrics.get(session_id).event("recall", "synthesizer", "recall", sub="elsewhere", runs=len(other["digests"]),
+                                      chars=other["chars"], items=other["items"])
+    return other
 
 
 def _recall_event(rec, prev: dict, current_urls: set, sub: Optional[str] = None) -> None:
@@ -301,6 +361,11 @@ class AgentPipeline:
         self._checked_urls: set[str] = set()   # URLs already HEAD-checked
         self._fetched_urls: set[str] = set()   # URLs already fetched by the fetcher
         self._summarized_urls: set[str] = set()
+        self.elsewhere: Optional[dict] = None  # other dispatches' digests from today (top-level pipeline only)
+        self.empty_reason: Optional[str] = None  # set when run() returns None; see EMPTY_REASONS
+
+    def _cancelled(self) -> bool:
+        return bool(self.cancel_event and self.cancel_event.is_set())
 
     def _micro(self, phase: str, system_prompt: str, user_content: str, **kw) -> Optional[str]:
         return run_micro_agent(
@@ -347,10 +412,15 @@ class AgentPipeline:
             if queries_json is None:
                 print("[pipeline] planner: WARNING: model returned no output — no queries will be generated")
             parsed = _parse_json_output(queries_json, None)
-            queries = parsed if parsed is not None else []
-            if isinstance(queries, dict):
-                queries = list(queries.values())
-            queries = [q for q in queries if isinstance(q, str)]
+            queries = _query_list(parsed)
+            if not queries and not direct and not self._cancelled():
+                print("[pipeline] planner: no usable queries, retrying once")
+                self.rec.event("retry", "planner", "planner", sub=self.sub, reason="no queries",
+                               output_chars=len(queries_json or ""))
+                with self.rec.phase("planner", sub=self.sub, retry=1):
+                    queries_json = self._micro("planner", plan_prompt + PROMPT_PLANNER_STRICT, goal)
+                parsed = _parse_json_output(queries_json, None)
+                queries = _query_list(parsed)
             print(f"[pipeline] planner: {len(queries)} queries generated")
             self.rec.event("decision", "planner", "planner", sub=self.sub, parsed_ok=parsed is not None,
                            requested=self.config.planner_query_count, queries=queries)
@@ -358,6 +428,7 @@ class AgentPipeline:
 
         if not queries:
             print("[pipeline] planner: no queries generated, skipping research phases")
+            self.empty_reason = "no_queries"
 
         # ── 2. Searcher loop ──────────────────────────────────────────────────
         if queries:
@@ -413,6 +484,7 @@ class AgentPipeline:
         if not self.research_buffer:
             print("[pipeline] synthesizer: no research collected — aborting to prevent hallucination")
             self.rec.event("synth_input", "synthesizer", "synthesizer", sub=self.sub, ok=False, error="no research collected")
+            self.empty_reason = self.empty_reason or "no_research"
             return None
         synth_prompt = PROMPT_SYNTHESIZER.format(output_template=self.config.output_template)
         if self.previous:
@@ -440,6 +512,10 @@ class AgentPipeline:
                        **self._buffer_sources())
         if self.previous:
             _recall_event(self.rec, self.previous, self._buffer_urls(), sub=self.sub)
+        if self.sub is None:
+            self.elsewhere = _load_elsewhere(self.session_id, self.config, synth_input)
+            if self.elsewhere:
+                synth_prompt += PROMPT_ELSEWHERE.format(elsewhere=self.elsewhere["block"])
         with self.rec.phase("synthesizer", sub=self.sub):
             _t0 = time.monotonic()
             result = self._micro(
@@ -448,8 +524,18 @@ class AgentPipeline:
                 num_predict=_SYNTHESIZER_MAX_TOKENS,
             )
             print(f"[pipeline] synthesizer: {int((time.monotonic()-_t0)*1000)}ms")
+        if not result and not self._cancelled():
+            # A failed or timed-out call: retry once on half the input (a smaller prompt is faster and fits the context).
+            half = synth_input[:len(synth_input) // 2] + "\n[TRUNCATED: input halved after a failed synthesizer call]"
+            print(f"[pipeline] synthesizer: no output, retrying once with {len(half)} chars")
+            self.rec.event("retry", "synthesizer", "synthesizer", sub=self.sub, reason="no output",
+                           chars_before=len(synth_input), chars_after=len(half))
+            with self.rec.phase("synthesizer", sub=self.sub, retry=1):
+                result = self._micro("synthesizer", synth_prompt, half,
+                                     num_ctx=_SYNTHESIZER_CTX, num_predict=_SYNTHESIZER_MAX_TOKENS)
         if not result:
             print("[pipeline] synthesizer: WARNING: model returned no output")
+            self.empty_reason = "synth_failed"
             return None
         return result
 
@@ -865,6 +951,7 @@ class MultiAgentPipeline:
         self.session_id = session_id
         self.config = config
         self.cancel_event = cancel_event
+        self.empty_reason: Optional[str] = None
 
     def run(self, query: str) -> Optional[str]:
         rec = metrics.get(self.session_id)
@@ -911,6 +998,7 @@ class MultiAgentPipeline:
                         sub_results[label] = result
 
         if not sub_results:
+            self.empty_reason = "no_sub_results"
             return None
 
         print(f"[multi-pipeline] aggregator: combining {len(sub_results)} sub-results...")
@@ -926,8 +1014,11 @@ class MultiAgentPipeline:
         if previous:
             agg_prompt += PROMPT_PREVIOUS.format(previous=previous["block"])
             _recall_event(rec, previous, set(digests.urls(agg_input)))
+        elsewhere = _load_elsewhere(self.session_id, self.config, agg_input)
+        if elsewhere:
+            agg_prompt += PROMPT_ELSEWHERE.format(elsewhere=elsewhere["block"])
         with rec.phase("aggregator"):
-            return run_micro_agent(
+            result = run_micro_agent(
                 self.client, self.session_id,
                 agg_prompt,
                 agg_input,
@@ -936,3 +1027,6 @@ class MultiAgentPipeline:
                 cancel_event=self.cancel_event,
                 phase="aggregator",
             )
+        if not result and not (self.cancel_event and self.cancel_event.is_set()):
+            self.empty_reason = "aggregator_failed"
+        return result
