@@ -80,6 +80,7 @@ Rules:
 - If something is uncertain or not confirmed in the research, flag it explicitly.
 - Only include URLs that appeared verbatim in the research. Never construct or infer URLs.
 - For each claim or fact, cite the source URL immediately after: (source: https://...)
+- Start with exactly one line "Summary: " followed by one sentence (under 25 words) saying the most important thing in this digest, or "Summary: Quiet day: nothing major." if nothing stands out. Then a blank line, then the format below.
 
 Output format:
 {output_template}"""
@@ -91,6 +92,7 @@ Rules:
 - Do not duplicate stories or items. If multiple tracks surfaced the same item, include it once under the most relevant category.
 - Only include URLs that appeared verbatim in the sub-results. Never construct or infer URLs.
 - If something is uncertain or not confirmed in the research, flag it explicitly.
+- Start with exactly one line "Summary: " followed by one sentence (under 25 words) saying the most important thing in this digest, or "Summary: Quiet day: nothing major." if nothing stands out. Then a blank line, then the format below.
 
 Output format:
 {output_template}"""

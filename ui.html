@@ -406,7 +406,14 @@ body.theme-light .btn-primary { color: white !important; }
 .digest-card-hdr.open { border-bottom: 1px solid var(--line); }
 .digest-card-title {
   margin: 0; font-size: 14.5px; font-weight: 600; letter-spacing: -0.005em;
-  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.digest-card-head { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.digest-card-head .title-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.digest-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.digest-summary {
+  font-size: 13px; line-height: 1.4; color: var(--fg-2);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .digest-card-body { padding: 16px 22px 22px; }
 .digest-intro { margin: 0 0 12px; font-size: 14px; color: var(--fg-2); line-height: 1.5; }
@@ -1525,6 +1532,7 @@ function renderDigest() {
     const label = dispatchLabel(c, 60);
     const when = s ? fmtRelTime(s.started_at) : '';
     const runs = runsCountHTML(c);
+    const { summary, body: content } = splitSummary(s?.content);
 
     let body = '';
     if (!s) {
@@ -1532,15 +1540,17 @@ function renderDigest() {
     } else if (!s.content) {
       body = `<div style="padding:12px 22px;font-size:13px;color:var(--fg-3);font-style:italic">No output recorded.</div>`;
     } else {
-      body = `<div style="padding:16px 22px 22px"><div class="md" style="font-size:14px;line-height:1.6;color:var(--fg-2)">${renderMd(s.content)}</div></div>`;
+      body = `<div style="padding:16px 22px 22px"><div class="md" style="font-size:14px;line-height:1.6;color:var(--fg-2)">${renderMd(content)}</div></div>`;
     }
 
     const sessionOnclick = s ? `openRunDrawer(${s.id})` : `openAgentSheet(${c.id})`;
 
     return `<article class="digest-card" id="${id}">
       <div class="digest-card-hdr${isOpen ? ' open' : ''}" onclick="digestToggleCard('${id}', event)" data-session="${s?.id || ''}" data-dispatch="${c.id}">
-        ${pillHTML(c.agent)}
-        <h2 class="digest-card-title">${esc(label)}</h2>
+        <div class="digest-card-head">
+          <div class="title-row"><span class="digest-dot" style="background:${catColors(c.agent).fg}" title="${esc(allAgents.find(a => a.name === c.agent)?.label || c.agent)}"></span><h2 class="digest-card-title">${esc(label)}</h2></div>
+          ${summary ? `<div class="digest-summary">${esc(summary)}</div>` : ''}
+        </div>
         <span class="meta-mono">${runs}</span>
         ${when ? `<span class="meta-mono">·</span><span class="meta-mono">${esc(when)}</span>` : ''}
         ${chatCounts[c.id] ? `<button class="btn btn-ghost btn-sm meta-mono" onclick="event.stopPropagation();askShowDispatchChats(${c.id})" title="Chats about this dispatch">${chatCounts[c.id]} chat${chatCounts[c.id] > 1 ? 's' : ''}</button>` : ''}
@@ -1560,6 +1570,16 @@ function renderDigest() {
     </div>
     ${cards}
   </div>`;
+}
+
+// A digest's first line "Summary: …" (asked of the synthesizer) → shown in the card header, not repeated in the body.
+function splitSummary(text) {
+  if (!text) return { summary: '', body: text || '' };
+  const lines = text.split('\n');
+  const i = lines.findIndex(l => l.trim());
+  const m = i >= 0 ? lines[i].match(/^\s*\**summary:?\**:?\s*(.+)$/i) : null;
+  if (!m) return { summary: '', body: text };
+  return { summary: m[1].replace(/\*+/g, '').trim(), body: lines.slice(i + 1).join('\n').replace(/^\s+/, '') };
 }
 
 function digestToggleAll() {

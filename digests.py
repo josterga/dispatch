@@ -27,6 +27,18 @@ def urls(text: Optional[str]) -> list[str]:
     return out
 
 
+_SUMMARY_RE = re.compile(r"^\s*\**summary:?\**:?\s*(.+)$", re.I)
+
+
+def summary(text: Optional[str]) -> Optional[str]:
+    """The digest's one-sentence "Summary: …" line (its first non-empty line), or None."""
+    for line in (text or "").splitlines():
+        if line.strip():
+            m = _SUMMARY_RE.match(line)
+            return m.group(1).strip().strip("*").strip() if m else None
+    return None
+
+
 def headings(text: Optional[str]) -> list[str]:
     return [l.lstrip("#").strip() for l in (text or "").splitlines() if re.match(r"#{1,3}\s", l)]
 
@@ -109,6 +121,8 @@ def catalog(days: int = 7, max_headings: int = 8) -> str:
             hs = headings(s["content"])
             lines.append(f"  latest run {s['id']} at {_local(s['started_at'])}"
                          + (f": {' | '.join(hs[:max_headings])}" if hs else ""))
+            if summary(s["content"]):
+                lines.append(f"  summary: {summary(s['content'])[:200]}")
         else:
             lines.append("  no runs yet")
         (blocks_active if d["enabled"] else blocks_archived).append("\n".join(lines))
